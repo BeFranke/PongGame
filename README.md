@@ -1,2 +1,2 @@
 # PongGame
-Just playing aroun
+Just playing around with the Kivy-Tutorial
