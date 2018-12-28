@@ -6,6 +6,8 @@ from kivy.vector import Vector
 from kivy.clock import Clock
 from random import randint, choice
 from kivy.core.window import Window
+from AI import *
+from settings import Config
 
 class PongGame(Widget):
     enabled = True
@@ -14,7 +16,7 @@ class PongGame(Widget):
     player2 = ObjectProperty(None)
     game_msg = StringProperty("")
     game_msg_expl = StringProperty("")
-    SCORE_TO_WIN = 11
+    SCORE_TO_WIN = Config.get('points to win')
 
     def clear_game(self):
         self.game_msg = ""
@@ -30,6 +32,9 @@ class PongGame(Widget):
     def serve_ball(self):
         self.ball.center = self.center
         self.ball.velocity = Vector(5, 0).rotate(randint(0, 360))
+        if abs(self.ball.velocity[0]) < abs(self.ball.velocity[1]):
+            self.ball.velocity = \
+                Vector(self.ball.velocity[1], self.ball.velocity[0])
 
     def game_end(self, winner):
         self.game_msg = "Player {} wins the game!".format(winner)
@@ -41,7 +46,7 @@ class PongGame(Widget):
             return
 
         self.ball.move()
-        self.player2.play(dt)
+        self.player2.play(dt, self.ball.velocity, self.ball.pos)
 
         self.player1.bounce_ball(self.ball)
         self.player2.bounce_ball(self.ball)
@@ -81,9 +86,12 @@ class Player(Widget):
     def bounce_ball(self, ball):
         if self.collide_widget(ball):
             speedup  = 1.1
-            x_speedup = 0 if ball.velocity_x > ball.velocity_y else choice(range(0, 5)) * 0.1
-            offset = 0.02 * Vector(x_speedup, ball.center_y-self.center_y)
-            ball.velocity =  speedup * Vector(-ball.velocity_x, ball.velocity_y) + offset
+            x_speedup = 0 if ball.velocity_x > ball.velocity_y \
+                    else choice(range(0, 5)) * Config.get('speedup')
+            offset = Config.get('offset') * \
+                Vector(x_speedup, ball.center_y-self.center_y)
+            ball.velocity =  speedup * \
+                Vector(-ball.velocity_x, ball.velocity_y) + offset
 
 class Human(Player):
     def on_touch_move(self, touch):
@@ -93,25 +101,28 @@ class Human(Player):
             self.center_y = touch.y
 
 class AI(Player):
+    ai = Config.get('AI')
+    if ai == "Heuristic":
+        decisionMaker = Heuristic()
+    elif isinstance(ai, tuple):
+        if ai[0] == "Speedlimit":
+            decisionMaker = Speed_Limit(ai[1])
+    else:
+        raise Exception("Config Error: AI Type not understood!")
+        exit(1)
 
-    direction = choice([-1, 1])
-    time_to_traverse = 2
-
-    def play(self, dt):
-        self.center_y += self.direction * Window.size[1] * dt/4
-
-
-        if self.center_y - self.size[1]/2 <= 0 or \
-            self.center_y + self.size[1]/2 >= Window.size[1]:
-            self.direction *= -1
-
+    def play(self, dt, ball_vel, ball_pos):
+        delta_y = self.decisionMaker.decide(dt, ball_vel, ball_pos,\
+                        Window.size, self.size, self.center_y)
+        self.center_y += delta_y if abs(delta_y) > 1 else 0
 
 class PongApp(App):
     def build(self):
         game = PongGame()
         game.serve_ball()
-        Clock.schedule_interval(game.update, 1.0/90.0)
+        Clock.schedule_interval(game.update, 1.0/float(Config.get('frame limit')))
         return game
 
 if __name__ == "__main__":
+    Config.load()
     PongApp().run()
