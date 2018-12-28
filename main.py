@@ -1,22 +1,47 @@
 from kivy.app import App
 from kivy.uix.widget import Widget
 from kivy.properties import NumericProperty, ReferenceListProperty,\
-    ObjectProperty
+    ObjectProperty, StringProperty
 from kivy.vector import Vector
 from kivy.clock import Clock
-from random import randint
+from random import randint, choice
+from kivy.core.window import Window
 
 class PongGame(Widget):
+    enabled = True
     ball = ObjectProperty(None)
     player1 = ObjectProperty(None)
     player2 = ObjectProperty(None)
+    game_msg = StringProperty("")
+    game_msg_expl = StringProperty("")
+    SCORE_TO_WIN = 11
+
+    def clear_game(self):
+        self.game_msg = ""
+        self.game_msg_expl = ""
+        self.player1.score = 0
+        self.player2.score = 0
+
+    def on_touch_down(self, touch):
+        if not self.enabled:
+            self.clear_game()
+            self.enabled = True
 
     def serve_ball(self):
         self.ball.center = self.center
         self.ball.velocity = Vector(5, 0).rotate(randint(0, 360))
 
+    def game_end(self, winner):
+        self.game_msg = "Player {} wins the game!".format(winner)
+        self.game_msg_expl = "Tap to play again!"
+        self.enabled = False
+
     def update(self, dt):
+        if not self.enabled:
+            return
+
         self.ball.move()
+        self.player2.play(dt)
 
         self.player1.bounce_ball(self.ball)
         self.player2.bounce_ball(self.ball)
@@ -26,10 +51,18 @@ class PongGame(Widget):
 
         elif self.ball.x < self.x:
             self.player2.score += 1
+
+            if self.player2.score == self.SCORE_TO_WIN:
+                self.game_end(2)
+
             self.serve_ball()
 
         elif self.ball.x > self.width:
             self.player1.score += 1
+
+            if self.player1.score == self.SCORE_TO_WIN:
+                self.game_end(1)
+
             self.serve_ball()
 
 class PongBall(Widget):
@@ -48,14 +81,30 @@ class Player(Widget):
     def bounce_ball(self, ball):
         if self.collide_widget(ball):
             speedup  = 1.1
-            offset = 0.02 * Vector(0, ball.center_y-self.center_y)
-            ball.velocity =  speedup * Vector(-ball.velocity_x, ball.velocity_y)
+            x_speedup = 0 if ball.velocity_x > ball.velocity_y else choice(range(0, 5)) * 0.1
+            offset = 0.02 * Vector(x_speedup, ball.center_y-self.center_y)
+            ball.velocity =  speedup * Vector(-ball.velocity_x, ball.velocity_y) + offset
 
+class Human(Player):
     def on_touch_move(self, touch):
         if touch.x < self.width/3:
             self.center_y = touch.y
         elif touch.x > self.width - self.width/3:
             self.center_y = touch.y
+
+class AI(Player):
+
+    direction = choice([-1, 1])
+    time_to_traverse = 2
+
+    def play(self, dt):
+        self.center_y += self.direction * Window.size[1] * dt/4
+
+
+        if self.center_y - self.size[1]/2 <= 0 or \
+            self.center_y + self.size[1]/2 >= Window.size[1]:
+            self.direction *= -1
+
 
 class PongApp(App):
     def build(self):

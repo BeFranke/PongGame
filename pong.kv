@@ -1,5 +1,12 @@
 #:kivy 1.0.9
-<Player>
+<Human>
+  size: 25, 200
+  canvas:
+    Rectangle:
+      pos: self.pos
+      size: self.size
+
+<AI>
   size: 25, 200
   canvas:
     Rectangle:
@@ -17,10 +24,6 @@
   ball: pong_ball
   player1: player_1
   player2: player_2
-  canvas:
-    Rectangle:
-      pos: self.center_x - 5, 0
-      size: 10, self.height
 
   Label:
     font_size: 70
@@ -36,11 +39,21 @@
   PongBall:
     id: pong_ball
     center: self.parent.center
-  Player:
+  Human:
     id: player_1
     center_x: root.width * 1/10
     center_y: root.height * 0.5
-  Player:
+  AI:
     id: player_2
     center_x: root.width * 9/10
     center_y: root.height * 0.5
+  Label:
+    center: root.center
+    top: root.top - 200
+    font_size: 70
+    text: root.game_msg
+  Label:
+    center: root.center
+    top: root.top - 300
+    font_size: 30
+    text: root.game_msg_expl
