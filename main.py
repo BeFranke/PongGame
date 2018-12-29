@@ -17,7 +17,7 @@ class PongGame(Widget):
     player2 = ObjectProperty(None)
     game_msg = StringProperty("")
     game_msg_expl = StringProperty("")
-    SCORE_TO_WIN = Config.get('points to win')
+    SCORE_TO_WIN = Config.get('points_to_win')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -33,7 +33,7 @@ class PongGame(Widget):
                 if player[i][0] == "Heuristic":
                     self.player_list[i] = Heuristic(player[i][1], widget, self)
                     Clock.schedule_interval(self.player_list[i].play, \
-                        1.0/float(Config.get('frame limit')))
+                        1.0/float(Config.get('frame_limit')))
                 else:
                     raise Exception("Config Error: Malformatted AI entry!")
                     exit(1)
@@ -108,7 +108,8 @@ class PlayerWidget(Widget):
     def bounce_ball(self, ball):
         if self.collide_widget(ball):
             #self.pong_sound.play()
-            speedup  = Config.get('speedup')
+            randomness = random() * 0.4 + 0.8
+            speedup  = Config.get('speedup') * randomness
             offset = Config.get('offset') * \
                 Vector(0, ball.center_y-self.center_y)
             ball.velocity =  speedup * \
@@ -126,18 +127,6 @@ class Human():
             self.widget.center_y = touch.y
     def on_pong(self):
         pass
-
-"""class AI():
-    def __init__(self, speed_limit, ):
-
-
-    def play(self, dt, ball_vel, ball_pos):
-        delta_y = self.decisionMaker.decide(dt, ball_vel, ball_pos,\
-                        Window.size, self.size, self.center_y)
-        self.center_y += delta_y if abs(delta_y) > 1 else 0
-
-    def on_pong(self):
-        self.decisionMaker.on_pong()"""
 
 class PongApp(App):
     def build(self):

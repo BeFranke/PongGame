@@ -4,9 +4,9 @@ import json
 class Config():
     cfgf = './config.cfg'
     cfg = {
-        'frame limit': 90,
+        'frame_limit': 300,
         'players': ['Human', ['Heuristic', -1]],
-        'points to win': 11,
+        'points_to_win': 11,
         'speedup': 1.1,
         'offset': 0.02,
     }
