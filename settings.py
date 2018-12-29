@@ -5,7 +5,7 @@ class Config():
     cfgf = './config.cfg'
     cfg = {
         'frame_limit': 300,
-        'players': ['Human', ['Heuristic', -1]],
+        'players': ['Human', ['Heuristic', 1200]],
         'points_to_win': 11,
         'speedup': 1.1,
         'offset': 0.02,
