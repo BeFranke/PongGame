@@ -1,4 +1,5 @@
 from random import choice, random
+from kivy.core.window import Window
 
 class Legacy:
     def __init__(self):
@@ -16,10 +17,17 @@ class Legacy:
         return delta_y
 
 class Heuristic:
-    def __init__(self, speed_limit):
+    def __init__(self, speed_limit, widget, game):
         # speed limit is given in height/sec
         self.speed_limit = speed_limit
         self.rand = random()
+        self.widget = widget
+        self.game = game
+
+    def play(self, dt):
+        self.widget.center_y += self.decide(dt, self.game.ball.velocity, \
+                    self.game.ball.pos, Window.size, self.widget.size, \
+                    self.widget.center_y)
 
     def on_pong(self):
         self.rand = random()

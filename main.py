@@ -19,6 +19,28 @@ class PongGame(Widget):
     game_msg_expl = StringProperty("")
     SCORE_TO_WIN = Config.get('points to win')
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        player = Config.get('players')
+        self.player_list = [None] * 2
+        self.player1widget = self.ids.player_1
+        self.player2widget = self.ids.player_2
+        for i in range(2):
+            widget = self.player1widget if i == 0 else self.player2widget
+            if player[i] == "Human":
+                self.player_list[i] = Human(widget)
+            elif isinstance(player[i], list):
+                if player[i][0] == "Heuristic":
+                    self.player_list[i] = Heuristic(player[i][1], widget, self)
+                    Clock.schedule_interval(self.player_list[i].play, \
+                        1.0/float(Config.get('frame limit')))
+                else:
+                    raise Exception("Config Error: Malformatted AI entry!")
+                    exit(1)
+            else:
+                raise Exception("Config Error: AI Type not understood!")
+                exit(1)
+
     def clear_game(self):
         self.game_msg = ""
         self.game_msg_expl = ""
@@ -47,7 +69,6 @@ class PongGame(Widget):
             return
 
         self.ball.move()
-        self.player2.play(dt, self.ball.velocity, self.ball.pos)
 
         self.player1.bounce_ball(self.ball)
         self.player2.bounce_ball(self.ball)
@@ -80,39 +101,35 @@ class PongBall(Widget):
     def move(self):
         self.pos = Vector(*self.velocity) + self.pos
 
-class Player(Widget):
+class PlayerWidget(Widget):
     score = NumericProperty(0)
     #self.pong_sound = SoundLoader.load('./res/pong.wav')
 
     def bounce_ball(self, ball):
         if self.collide_widget(ball):
             #self.pong_sound.play()
-            self.on_pong()
             speedup  = Config.get('speedup')
             offset = Config.get('offset') * \
                 Vector(0, ball.center_y-self.center_y)
             ball.velocity =  speedup * \
                 Vector(-ball.velocity_x, ball.velocity_y) + offset
 
-class Human(Player):
+class Human():
+    def __init__(self, widget):
+        self.widget = widget
+        widget.on_touch_move = self.on_touch_move
+
     def on_touch_move(self, touch):
-        if touch.x < self.width/3:
-            self.center_y = touch.y
-        elif touch.x > self.width - self.width/3:
-            self.center_y = touch.y
+        if touch.x < self.widget.width/3:
+            self.widget.center_y = touch.y
+        elif touch.x > self.widget.width - self.widget.width/3:
+            self.widget.center_y = touch.y
     def on_pong(self):
         pass
 
-class AI(Player):
-    def __init__(self, *args, **kwargs):
-        super().__init__()
-        ai = Config.get('AI')
-        if isinstance(ai, list):
-            if ai[0] == "Heuristic":
-                self.decisionMaker = Heuristic(ai[1])
-        else:
-            raise Exception("Config Error: AI Type not understood!")
-            exit(1)
+"""class AI():
+    def __init__(self, speed_limit, ):
+
 
     def play(self, dt, ball_vel, ball_pos):
         delta_y = self.decisionMaker.decide(dt, ball_vel, ball_pos,\
@@ -120,7 +137,7 @@ class AI(Player):
         self.center_y += delta_y if abs(delta_y) > 1 else 0
 
     def on_pong(self):
-        self.decisionMaker.on_pong()
+        self.decisionMaker.on_pong()"""
 
 class PongApp(App):
     def build(self):

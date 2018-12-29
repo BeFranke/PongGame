@@ -1,12 +1,12 @@
 #:kivy 1.0.9
-<Human>
+<PlayerWidget>
   size: 25, 200
   canvas:
     Rectangle:
       pos: self.pos
       size: self.size
 
-<AI>
+<PlayerWidget>
   size: 25, 200
   canvas:
     Rectangle:
@@ -39,11 +39,11 @@
   PongBall:
     id: pong_ball
     center: self.parent.center
-  Human:
+  PlayerWidget:
     id: player_1
     center_x: root.width * 1/10
     center_y: root.height * 0.5
-  AI:
+  PlayerWidget:
     id: player_2
     center_x: root.width * 9/10
     center_y: root.height * 0.5

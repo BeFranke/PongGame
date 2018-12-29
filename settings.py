@@ -5,9 +5,9 @@ class Config():
     cfgf = './config.cfg'
     cfg = {
         'frame limit': 90,
-        'AI': ('Heuristic', -1),
+        'players': ['Human', ['Heuristic', -1]],
         'points to win': 11,
-        'speedup': 0.1,
+        'speedup': 1.1,
         'offset': 0.02,
     }
     @staticmethod
