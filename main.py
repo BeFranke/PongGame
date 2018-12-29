@@ -8,6 +8,7 @@ from random import randint, choice
 from kivy.core.window import Window
 from AI import *
 from settings import Config
+#from kivy.core.audio import SoundLoader
 
 class PongGame(Widget):
     enabled = True
@@ -38,7 +39,7 @@ class PongGame(Widget):
 
     def game_end(self, winner):
         self.game_msg = "Player {} wins the game!".format(winner)
-        self.game_msg_expl = "Tap to play again!"
+        self.game_msg_expl = "Tap to play again"
         self.enabled = False
 
     def update(self, dt):
@@ -80,16 +81,16 @@ class PongBall(Widget):
         self.pos = Vector(*self.velocity) + self.pos
 
 class Player(Widget):
-
     score = NumericProperty(0)
+    #self.pong_sound = SoundLoader.load('./res/pong.wav')
 
     def bounce_ball(self, ball):
         if self.collide_widget(ball):
-            speedup  = 1.1
-            x_speedup = 0 if ball.velocity_x > ball.velocity_y \
-                    else choice(range(0, 5)) * Config.get('speedup')
+            #self.pong_sound.play()
+            self.on_pong()
+            speedup  = Config.get('speedup')
             offset = Config.get('offset') * \
-                Vector(x_speedup, ball.center_y-self.center_y)
+                Vector(0, ball.center_y-self.center_y)
             ball.velocity =  speedup * \
                 Vector(-ball.velocity_x, ball.velocity_y) + offset
 
@@ -99,20 +100,27 @@ class Human(Player):
             self.center_y = touch.y
         elif touch.x > self.width - self.width/3:
             self.center_y = touch.y
+    def on_pong(self):
+        pass
 
 class AI(Player):
-    ai = Config.get('AI')
-    if isinstance(ai, tuple):
-        if ai[0] == "Heuristic":
-            decisionMaker = Heuristic(ai[1])
-    else:
-        raise Exception("Config Error: AI Type not understood!")
-        exit(1)
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        ai = Config.get('AI')
+        if isinstance(ai, list):
+            if ai[0] == "Heuristic":
+                self.decisionMaker = Heuristic(ai[1])
+        else:
+            raise Exception("Config Error: AI Type not understood!")
+            exit(1)
 
     def play(self, dt, ball_vel, ball_pos):
         delta_y = self.decisionMaker.decide(dt, ball_vel, ball_pos,\
                         Window.size, self.size, self.center_y)
         self.center_y += delta_y if abs(delta_y) > 1 else 0
+
+    def on_pong(self):
+        self.decisionMaker.on_pong()
 
 class PongApp(App):
     def build(self):
@@ -123,4 +131,5 @@ class PongApp(App):
 
 if __name__ == "__main__":
     Config.load()
+    Window.fullscreen = 'auto'
     PongApp().run()

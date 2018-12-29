@@ -19,10 +19,16 @@ class Heuristic:
     def __init__(self, speed_limit):
         # speed limit is given in height/sec
         self.speed_limit = speed_limit
+        self.rand = random()
+
+    def on_pong(self):
+        self.rand = random()
 
     def decide(self, dt, ball_vel, ball_pos, window_dims, paddle_size, center_y):
         desired = ball_pos[1] - center_y
+        #error_margin = (ball_vel[1]/abs(ball_vel[1])) * paddle_size[1] * 0.1 * self.rand * 3
+        #desired += error_margin
         if self.speed_limit == -1 or abs(desired/dt) <= self.speed_limit:
-            return desired if desired > 15 else 0
+            return desired
         else:
-            return self.speed_limit * desired / abs(desired)
+            return (self.speed_limit * desired / abs(desired)) * dt
