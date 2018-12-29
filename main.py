@@ -132,7 +132,7 @@ class PongApp(App):
     def build(self):
         game = PongGame()
         game.serve_ball()
-        Clock.schedule_interval(game.update, 1.0/float(Config.get('frame limit')))
+        Clock.schedule_interval(game.update, 1.0/float(Config.get('frame_limit')))
         return game
 
 if __name__ == "__main__":
