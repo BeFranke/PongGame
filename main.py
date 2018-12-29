@@ -102,11 +102,9 @@ class Human(Player):
 
 class AI(Player):
     ai = Config.get('AI')
-    if ai == "Heuristic":
-        decisionMaker = Heuristic()
-    elif isinstance(ai, tuple):
-        if ai[0] == "Speedlimit":
-            decisionMaker = Speed_Limit(ai[1])
+    if isinstance(ai, tuple):
+        if ai[0] == "Heuristic":
+            decisionMaker = Heuristic(ai[1])
     else:
         raise Exception("Config Error: AI Type not understood!")
         exit(1)

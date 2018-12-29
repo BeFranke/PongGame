@@ -1,6 +1,6 @@
 from random import choice, random
 
-class Heuristic:
+class Legacy:
     def __init__(self):
         self.direction = choice([-1, 1])
 
@@ -15,14 +15,14 @@ class Heuristic:
 
         return delta_y
 
-class Speed_Limit:
+class Heuristic:
     def __init__(self, speed_limit):
         # speed limit is given in height/sec
         self.speed_limit = speed_limit
 
     def decide(self, dt, ball_vel, ball_pos, window_dims, paddle_size, center_y):
         desired = ball_pos[1] - center_y
-        if self.speed_limit == -1 or desired/dt <= self.speed_limit:
-            return desired
+        if self.speed_limit == -1 or abs(desired/dt) <= self.speed_limit:
+            return desired if desired > 15 else 0
         else:
-            return self.speed_limit
+            return self.speed_limit * desired / abs(desired)
