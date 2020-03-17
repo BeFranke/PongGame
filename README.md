@@ -1,2 +1,2 @@
 # PongGame
-Just playing around with the Kivy-Tutorial
+A kivy based Pong game, and a neural network learning to play it
