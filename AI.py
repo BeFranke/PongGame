@@ -1,11 +1,14 @@
-from abc import ABC
-from random import random
-import numpy as np
-from tensorflow.keras.layers import Input, Dense
-from tensorflow.keras.models import Model, load_model
 import os
+from abc import ABC, abstractmethod
+from random import random
 
-from tensorflow.keras.utils import to_categorical
+import numpy as np
+import tensorflow.keras.losses as l
+from tensorflow import function
+from tensorflow.keras import backend as K
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import RMSprop
 
 
 class AI(ABC):
@@ -15,11 +18,23 @@ class AI(ABC):
         self.widget = widget
         self.ball = ball
 
+    @abstractmethod
     def play(self, dt):
+        pass
+
+    @abstractmethod
+    def notify_end(self, won):
+        pass
+
+    @abstractmethod
+    def on_pong(self):
         pass
 
 
 class Heuristic(AI):
+    def notify_end(self, won):
+        pass
+
     def __init__(self, speed_limit, widget, ball):
         super().__init__(speed_limit, widget, ball)
         self.rand = random()
@@ -43,14 +58,21 @@ class Heuristic(AI):
 
 
 class NeuralNet(AI):
-    def __init__(self, speed_limit, my_widget, enemy_widget, ball, game_size, save_path=".\\saved_models\\model"):
+    def on_pong(self):
+        self.memory_lbls += [0.0] * (len(self.memory_feats) - len(self.memory_lbls))
+
+    def __init__(self, speed_limit, my_widget, enemy_widget, ball, game_size, save_path=".\\saved_models\\model",
+                 training=True):
         super().__init__(speed_limit, my_widget, ball)
         self.save_path = save_path
         self.game_size = game_size
         self.enemy_widget = enemy_widget
+        self.training = training
         self.model = self._build_model()
         self.memory_feats = []
         self.memory_lbls = []
+        if not training:
+            K.set_learning_phase(0)
 
     def _build_model(self):
         """
@@ -68,17 +90,24 @@ class NeuralNet(AI):
         outputs:
             [score_up, score_down]
         """
+        inps = Input(shape=(10,))
+        out = Dense(6, activation="elu")(inps)
+        out = Dense(64, activation="elu")(out)
+        out = Dense(32, activation="elu")(out)
+        # out = Dense(1, activation="sigmoid")(out)
+        out = Dense(1, activation="sigmoid")(out)
+        model = Model(inputs=inps, outputs=out)
         if not os.path.isdir(self.save_path):
-            inps = Input(shape=(10,))
-            out = Dense(128, activation="selu")(inps)
-            out = Dense(32, activation="selu")(out)
-            out = Dense(1, activation="tanh")(out)
-            model = Model(inputs=inps, outputs=out)
-            model.compile(loss="MSE")
-            model.save(self.save_path)
-            return model
+            model.save_weights(self.save_path)
+
         else:
-            return load_model(self.save_path)
+            l.rl_loss = self.rl_loss
+            model.load_weights(self.save_path)
+
+        if self.training:
+            model.compile(loss=self.rl_loss, optimizer=RMSprop(learning_rate=0.05))
+
+        return model
 
     def play(self, dt):
 
@@ -94,31 +123,36 @@ class NeuralNet(AI):
         enemy_x = self.enemy_widget.center_x / x_max
         enemy_y = self.enemy_widget.center_y / y_max
         widget_size_y = self.widget.size[1]
-        self.widget.center_y += self. speed_limit * self._decide(dt, ball_x, ball_y, ball_vel_x, ball_vel_y, own_x, own_y, enemy_x, enemy_y,
-                                             widget_size_y)
+        self.widget.center_y = int(
+            self._decide(dt, ball_x, ball_y, ball_vel_x, ball_vel_y, own_x, own_y, enemy_x, enemy_y,
+                         widget_size_y) * self.game_size[1]
+        )
+        if self.widget.center_y < 0:
+            self.widget.center_y = 0
+        elif self.widget.center_y > self.game_size[1]:
+            self.widget.center_y = self.game_size[1]
 
     def _decide(self, dt, ball_x, ball_y, ball_vel_x, ball_vel_y, own_x, own_y, enemy_x, enemy_y, widget_size_y):
         """
-        :return: -1 for down, 1 for up, 0 for stay if both scores below threshold
+        :return: new relative y betweem 0 (top) and 1 (bottom)
         """
         X = np.array([[dt, ball_x, ball_y, ball_vel_x, ball_vel_y, own_x, own_y, enemy_x, enemy_y, widget_size_y]])
         self.memory_feats.append(X)
-        out = np.squeeze(self.model.predict(X))
-        action = np.sign(out)
-        if np.abs(out) > 0.2:
-            return action if action == 1 else -1
-        else: 
-            return 0
-        
+        out = np.squeeze(self.model(X))
+        assert 0 <= out <= 1, "this should't happen"
+        return out
+
     def notify_end(self, won):
-        self.memory_lbls += [int(won)] * (len(self.memory_feats) - len(self.memory_lbls))
+        self.memory_lbls += [float(not won)] * (len(self.memory_feats) - len(self.memory_lbls))
 
     def train(self):
         print("training started!")
         X = np.array(np.squeeze(self.memory_feats))
         y = np.array(self.memory_lbls)
-        self.model.fit(X, y, epochs=20, validation_split=0.2)
+        self.model.fit(X, y, epochs=5, verbose=0, )
         self.model.save(self.save_path)
-        
-    
 
+    @staticmethod
+    @function
+    def rl_loss(y_true, y_pred):
+        return K.sum(y_true) * K.sum(y_pred) ** 0

@@ -28,6 +28,7 @@ class PongGame(Widget):
         self.player_list: List[Union[AI, Human, None]] = [None] * 2
         self.player1widget = self.ids.player_1
         self.player2widget = self.ids.player_2
+        width, height = Window.size
         for i in range(2):
             my_widget = self.player1widget if i == 0 else self.player2widget
             enemy_widget = self.player1widget if i == 1 else self.player2widget
@@ -37,7 +38,8 @@ class PongGame(Widget):
                 if player[i][0] == "Heuristic":
                     self.player_list[i] = Heuristic(player[i][1], my_widget, self.ball)
                 elif player[i][0] == "NeuralNet":
-                    self.player_list[i] = NeuralNet(player[i][1], my_widget, enemy_widget, self.ball)
+                    self.player_list[i] = NeuralNet(player[i][1], my_widget, enemy_widget, self.ball,
+                                                    (width, height), training=False)
                 else:
                     raise Exception("Config Error: Malformatted AI entry!")
             else:
@@ -76,8 +78,8 @@ class PongGame(Widget):
 
         self.ball.move()
 
-        self.player1.bounce_ball(self.ball)
-        self.player2.bounce_ball(self.ball)
+        self.player1.bounce_ball(self.ball, self.player_list[0].on_pong)
+        self.player2.bounce_ball(self.ball, self.player_list[0].on_pong)
 
         if (self.ball.y < 0) or (self.ball.top > self.height):
             self.ball.velocity_y *= -1
@@ -114,9 +116,10 @@ class PlayerWidget(Widget):
 
     # pong_sound = SoundLoader.load('./res/pong.wav')
 
-    def bounce_ball(self, ball):
+    def bounce_ball(self, ball, on_hit):
         if self.collide_widget(ball):
             # self.pong_sound.play()
+            on_hit()
             randomness = random() * 0.4 + 0.8
             speedup = Config.get('speedup') * randomness
             offset = Config.get('offset') * \
