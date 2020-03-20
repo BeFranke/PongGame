@@ -1,7 +1,8 @@
 import os
 import json
 
-class Config():
+
+class Config:
     cfgf = './config.cfg'
     cfg = {
         'frame_limit': 300,
@@ -10,15 +11,18 @@ class Config():
         'speedup': 1.1,
         'offset': 0.02,
     }
+
     @staticmethod
     def load():
         if not os.path.isfile(Config.cfgf):
+            print("no config found!")
             Config.write_config()
         else:
             with open(Config.cfgf, 'r') as f:
                 custom = json.loads(f.read())
                 for key in custom:
                     Config.cfg[key] = custom[key]
+
     @staticmethod
     def write_config():
         with open(Config.cfgf, 'w+') as f:

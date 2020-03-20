@@ -8,7 +8,7 @@ from tensorflow import function
 from tensorflow.keras import backend as K
 from tensorflow.keras.layers import Input, Dense
 from tensorflow.keras.models import Model
-from tensorflow.keras.optimizers import RMSprop
+from tensorflow.keras.optimizers import SGD
 
 
 class AI(ABC):
@@ -45,11 +45,12 @@ class Heuristic(AI):
                                              self.widget.center_y)
 
     def on_pong(self):
+        # print("Pong: Heuristic")
         self.rand = random()
 
     def _decide(self, dt, ball_vel, ball_pos, paddle_size, center_y):
         desired = ball_pos[1] - center_y
-        error_margin = (ball_vel[1] / abs(ball_vel[1])) * paddle_size[1] * 0.1 * self.rand * 3
+        error_margin = (ball_vel[1] / abs(ball_vel[1] + 1e-6)) * paddle_size[1] * 0.1 * self.rand * 3
         desired += error_margin
         if self.speed_limit == -1 or abs(desired / dt) <= self.speed_limit:
             return desired
@@ -59,7 +60,8 @@ class Heuristic(AI):
 
 class NeuralNet(AI):
     def on_pong(self):
-        self.memory_lbls += [0.0] * (len(self.memory_feats) - len(self.memory_lbls))
+        # print("Pong: NN")
+        self.memory_lbls += [1.0] * (len(self.memory_feats) - len(self.memory_lbls))
 
     def __init__(self, speed_limit, my_widget, enemy_widget, ball, game_size, save_path=".\\saved_models\\model",
                  training=True):
@@ -71,8 +73,12 @@ class NeuralNet(AI):
         self.model = self._build_model()
         self.memory_feats = []
         self.memory_lbls = []
-        if not training:
-            K.set_learning_phase(0)
+        K.set_learning_phase(0)
+        self.random = 0.1
+        self.random_decay = 0.99
+
+    def random_next(self):
+        self.random *= self.random_decay
 
     def _build_model(self):
         """
@@ -91,10 +97,9 @@ class NeuralNet(AI):
             [score_up, score_down]
         """
         inps = Input(shape=(10,))
-        out = Dense(6, activation="elu")(inps)
+        out = Dense(128, activation="elu")(inps)
         out = Dense(64, activation="elu")(out)
         out = Dense(32, activation="elu")(out)
-        # out = Dense(1, activation="sigmoid")(out)
         out = Dense(1, activation="sigmoid")(out)
         model = Model(inputs=inps, outputs=out)
         if not os.path.isdir(self.save_path):
@@ -105,7 +110,7 @@ class NeuralNet(AI):
             model.load_weights(self.save_path)
 
         if self.training:
-            model.compile(loss=self.rl_loss, optimizer=RMSprop(learning_rate=0.05))
+            model.compile(loss=self.rl_loss, optimizer=SGD(learning_rate=0.001))
 
         return model
 
@@ -136,23 +141,25 @@ class NeuralNet(AI):
         """
         :return: new relative y betweem 0 (top) and 1 (bottom)
         """
-        X = np.array([[dt, ball_x, ball_y, ball_vel_x, ball_vel_y, own_x, own_y, enemy_x, enemy_y, widget_size_y]])
+        X = np.array([[dt, ball_x, ball_y, ball_vel_x, ball_vel_y, own_x, own_y, enemy_x, enemy_y, widget_size_y]],
+                     dtype=np.float32)
         self.memory_feats.append(X)
         out = np.squeeze(self.model(X))
         assert 0 <= out <= 1, "this should't happen"
         return out
 
     def notify_end(self, won):
-        self.memory_lbls += [float(not won)] * (len(self.memory_feats) - len(self.memory_lbls))
+        self.memory_lbls += [2 * float(won) - 1] * (len(self.memory_feats) - len(self.memory_lbls))
 
     def train(self):
-        print("training started!")
+        # print("training started!")
+        K.set_learning_phase(1)
         X = np.array(np.squeeze(self.memory_feats))
         y = np.array(self.memory_lbls)
-        self.model.fit(X, y, epochs=5, verbose=0, )
-        self.model.save(self.save_path)
+        self.model.fit(X, y, epochs=1, verbose=1, batch_size=len(X))
+        self.model.save_weights(self.save_path)
 
     @staticmethod
     @function
     def rl_loss(y_true, y_pred):
-        return K.sum(y_true) * K.sum(y_pred) ** 0
+        return K.sum(y_true * y_pred)

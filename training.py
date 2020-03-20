@@ -1,8 +1,5 @@
 from typing import Union, List
 
-import numpy as np
-from scipy.spatial.transform import Rotation as R
-
 from AI import *
 from settings import Config
 
@@ -73,7 +70,7 @@ class PongBall:
         self.center_y = size[1] * 0.5
         self.center_x = size[0] * 0.5
         a = np.random.rand() * np.pi * 2
-        self.velocity = np.array([5, 0]) @ np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+        self.velocity = np.squeeze(np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]]) @ np.array([[5], [0]]))
 
     def move(self):
         self.center_x += self.velocity[0]
@@ -111,26 +108,15 @@ class MockWidget:
 
 
 if __name__ == "__main__":
-    training_data = []
-    training_labels = []
-    n_epochs = 200
+    n_epochs = 1000
     for epoch in range(n_epochs):
+        K.clear_session()
         print(f"starting data generation {epoch} of {n_epochs}")
         Config.cfgf = "training.cfg"
         Config.load()
         game = PongGame()
-        game.player_list[1].memory_feats += training_data
-        game.player_list[1].memory_lbls += training_labels
-        if len(game.player_list[1].memory_feats) > 50000:
-            start = len(game.player_list[1].memory_feats) - 50000
-            game.player_list[1].memory_feats = game.player_list[1].memory_feats[start:]
-            game.player_list[1].memory_lbls = game.player_list[1].memory_lbls[start:]
-            training_labels = []
-            training_data = []
 
         while game.update(1/300) == 0:
             pass
         print("started training!")
         game.player_list[1].train()
-        training_data += game.player_list[1].memory_feats
-        training_labels += game.player_list[1].memory_lbls
