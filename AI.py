@@ -71,8 +71,10 @@ class NeuralNet(AI):
         self.enemy_widget = enemy_widget
         self.training = training
         self.model = self._build_model()
+        self.target_model = self._build_model()
         self.memory_feats = []
         self.memory_lbls = []
+        self.memory_pred = []
         K.set_learning_phase(0)
         self.random = 0.1
         self.random_decay = 0.99
@@ -94,13 +96,13 @@ class NeuralNet(AI):
             enemy_y: relative to y_max
             widget_size_y
         outputs:
-            [score_up, score_down]
+            100 Q-values, first for being in the lower 1% of the screen, 100th for being in the top 1% of the screen
         """
         inps = Input(shape=(10,))
-        out = Dense(128, activation="elu")(inps)
-        out = Dense(64, activation="elu")(out)
-        out = Dense(32, activation="elu")(out)
-        out = Dense(1, activation="sigmoid")(out)
+        out = Dense(5, activation="elu")(inps)
+        out = Dense(256, activation="elu")(out)
+        out = Dense(128, activation="elu")(out)
+        out = Dense(50, activation="linear")(out)
         model = Model(inputs=inps, outputs=out)
         if not os.path.isdir(self.save_path):
             model.save_weights(self.save_path)
@@ -110,7 +112,7 @@ class NeuralNet(AI):
             model.load_weights(self.save_path)
 
         if self.training:
-            model.compile(loss=self.rl_loss, optimizer=SGD(learning_rate=0.001))
+            model.compile(loss="MSE", optimizer=SGD(learning_rate=0.001))
 
         return model
 
@@ -128,10 +130,8 @@ class NeuralNet(AI):
         enemy_x = self.enemy_widget.center_x / x_max
         enemy_y = self.enemy_widget.center_y / y_max
         widget_size_y = self.widget.size[1]
-        self.widget.center_y = int(
-            self._decide(dt, ball_x, ball_y, ball_vel_x, ball_vel_y, own_x, own_y, enemy_x, enemy_y,
-                         widget_size_y) * self.game_size[1]
-        )
+        self.widget.center_y += self._decide(dt, ball_x, ball_y, ball_vel_x, ball_vel_y, own_x, own_y, enemy_x, enemy_y,
+                         widget_size_y) * self.speed_limit
         if self.widget.center_y < 0:
             self.widget.center_y = 0
         elif self.widget.center_y > self.game_size[1]:
@@ -139,13 +139,15 @@ class NeuralNet(AI):
 
     def _decide(self, dt, ball_x, ball_y, ball_vel_x, ball_vel_y, own_x, own_y, enemy_x, enemy_y, widget_size_y):
         """
-        :return: new relative y betweem 0 (top) and 1 (bottom)
+        :return: new relative y between 0 (top) and 1 (bottom)
         """
         X = np.array([[dt, ball_x, ball_y, ball_vel_x, ball_vel_y, own_x, own_y, enemy_x, enemy_y, widget_size_y]],
                      dtype=np.float32)
-        self.memory_feats.append(X)
         out = np.squeeze(self.model(X))
-        assert 0 <= out <= 1, "this should't happen"
+        self.memory_feats.append(X)
+        self.memory_pred.append(out)
+        if np.random.random() < self.random:
+            out = np.random.choice(np.arange(0, 1, 0.2))
         return out
 
     def notify_end(self, won):
