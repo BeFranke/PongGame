@@ -4,7 +4,7 @@ from sys import argv
 from typing import Dict, List
 
 from model import GameModel
-from player import Player, Human, Heuristic, NeuralNet
+from player import Player, Human, Dummy, NeuralNet, Heuristic
 from view import GUIController
 
 CONFIG_FILE = "config.json"
@@ -28,7 +28,11 @@ DEFAULT_CONFIG = {
 }
 
 
-def load_config() -> Dict:
+def load_config_or_write_defaults() -> Dict:
+    """
+    loads config from config.json, or writes it if it doesn't exist
+    :return: config dictionary
+    """
     if os.path.isfile(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as fp:
             cfg = json.load(fp)
@@ -41,6 +45,13 @@ def load_config() -> Dict:
 
 
 def get_players(cfg: Dict, player1_args: Dict = None, player2_args: Dict = None) -> List[Player]:
+    """
+    builds a list of Player-objects from the game config
+    :param cfg: Game config
+    :param player1_args: arguments for the constructor of player1
+    :param player2_args: arguments for the constructor of player 2
+    :return: [Player1, Player2]
+    """
     if player2_args is None:
         player2_args = {}
     if player1_args is None:
@@ -50,6 +61,8 @@ def get_players(cfg: Dict, player1_args: Dict = None, player2_args: Dict = None)
     for id, (player, args) in enumerate(zip(cfg["players"], args_ls)):
         if player == "Human":
             players.append(Human(id))
+        elif player == "Dummy":
+            players.append(Dummy(id))
         elif player == "Heuristic":
             players.append(Heuristic(id))
         elif player == "NeuralNet":
@@ -61,13 +74,14 @@ def get_players(cfg: Dict, player1_args: Dict = None, player2_args: Dict = None)
 
 
 if __name__ == "__main__":
-    cfg = load_config()
+    cfg = load_config_or_write_defaults()
     player1, player2 = get_players(cfg)
     model = GameModel(cfg, player1, player2)
     if not cfg["TRAIN_MODE"]:
         # run with GUI, no training
-        gui = GUIController(cfg, model.human_input, model.update)
+        gui = GUIController(cfg, model.human_input, model.update, model.reset)
         model.gui_update = gui.update
+        model.won_callback = gui.game_won
         gui.run()
 
     else:
