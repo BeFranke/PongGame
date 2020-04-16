@@ -52,6 +52,7 @@ class GameModel:
         :param dt: time delta elapsed since last frame in milliseconds
         :return True if game ended, else false
         """
+        # print(f"delta is {dt}")
         # move the ball
         last_pos = self.ball_pos.copy()
         self.ball_pos += self.ball_vel * dt

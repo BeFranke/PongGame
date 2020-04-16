@@ -8,8 +8,8 @@ from typing import Dict, List
 from model import GameModel
 from player import Player, Human, Dummy, NeuralNet, Heuristic
 
-TRAIN_GAMES = 1000
-STEPS_BETWEEN_TRAINING = 10
+TRAIN_GAMES = 10000
+STEPS_BETWEEN_TRAINING = 400
 CONFIG_FILE = "config.json"
 DEFAULT_CONFIG = {
     "TRAIN_MODE": False,
@@ -71,8 +71,15 @@ def get_players(cfg: Dict, player1_args: Dict = None, player2_args: Dict = None)
         elif player == "Heuristic":
             players.append(Heuristic(id))
         elif player == "NeuralNet":
+            args = {
+                "id": id,
+                "speed_limit": cfg["limits"]["max_speed_player"],
+                "training": cfg["TRAIN_MODE"]
+            }
+            if cfg["TRAIN_MODE"]:
+                args["epsilon"] = 0
             players.append(
-                NeuralNet(id, cfg["limits"]["max_speed_player"], training=cfg["TRAIN_MODE"])
+                NeuralNet(**args)
             )
         else:
             raise Exception("AI Type not understood!")
@@ -104,7 +111,6 @@ if __name__ == "__main__":
             ais.append(player1)
         if isinstance(player2, NeuralNet):
             ais.append(player2)
-            player2.model_path = "models/DeepQPlayer2"
         if not isinstance(player1, NeuralNet) and not isinstance(player2, NeuralNet):
             warnings.warn("No trainable Ais detected! Running GUI-less without training is only "
                           "recommended for debugging")
@@ -116,14 +122,16 @@ if __name__ == "__main__":
             # simulate the game
             while _train_game_runs:
                 # simulate a delta around 4 milliseconds
-                delta = 4 + (random() - 0.5) * 2
+                delta = 0.01 + (random() - 0.5) * 0.01
                 for _ in range(STEPS_BETWEEN_TRAINING):
                     model.update(delta)
                     if not _train_game_runs:
                         break
 
-                for ai in ais:
-                    ai.train()
+                ais[0].train()
+                # only the first will be trained to save time
+                if len(ais) > 1:
+                    ais[1].reload_from_path(ais[0].model_path)
 
             _train_game_runs = True
             model.reset()

@@ -90,8 +90,8 @@ class NeuralNet(Player):
     tf.keras based deep-Q agent
     """
     def __init__(self, id, speed_limit: float, model_path: str = "models/DeepPongQ", training: bool = True,
-                 gamma: float = 0.8, epsilon: float = 0.5, epsilon_decay: float = 0.99, pong_reward: int = 1,
-                 win_reward: int = 20, epsilon_min: float = 0.001, batch_size=256, checkpoints=True):
+                 gamma: float = 0.8, epsilon: float = 0.7, epsilon_decay: float = 0.99, pong_reward: int = 1,
+                 win_reward: int = 0, epsilon_min: float = 0.001, batch_size=1024, checkpoints=True):
         super().__init__(id)
         self.checkpoints = checkpoints
         self.batch_size = batch_size
@@ -121,12 +121,13 @@ class NeuralNet(Player):
 
         # compute the state-vector
         if self.id == 0:
-            state = np.array([[dt, player1_pos[0], player1_pos[1], player2_pos[0], player2_pos[1],
-                              ball_pos[0], ball_pos[1], ball_vel[0], ball_vel[1]]])
+            my_pos = player1_pos
+            state = np.array([[dt, player1_pos[1], player2_pos[1], ball_pos[0], ball_pos[1], ball_vel[0], ball_vel[1]]])
         else:
             # mirror the field to make "finding itself" easier for the NeuralNet
-            state = np.array([[dt, - player2_pos[0] + 1, player2_pos[1], - player1_pos[0] + 1,
-                              player1_pos[1], - ball_pos[0] + 1, ball_pos[1], - ball_vel[0] + 1, ball_vel[1]]])
+            my_pos = player2_pos
+            state = np.array([[dt, player2_pos[1], player1_pos[1], - ball_pos[0] + 1, ball_pos[1],
+                               - ball_vel[0], ball_vel[1]]])
 
         # manage memory
         # if last state exists, but reward is none, the last action did not yield any reward
@@ -142,10 +143,9 @@ class NeuralNet(Player):
         if np.random.rand() <= self.epsilon:
             action = np.random.choice(self.actions)
         else:
-            action = np.argmax(self.model(state))
+            action = self.actions[int(np.argmax(self.model(state)))]
         self.last_state["action"] = action
-        self.epsilon *= self.epsilon_decay if self.epsilon > self.epsilon_min else 1
-        return action * self.speed_limit
+        return my_pos[1] + action * self.speed_limit
 
     def train(self):
         x_batch, y_batch = [], []
@@ -157,6 +157,12 @@ class NeuralNet(Player):
             reward = d["reward"]
             done = d["done"]
             next_state = d["next_state"]
+            # extra penalty for useless actions
+            if state[0, 2] > 0.9 and (action == 1 or action == 0) or \
+                    state[0, 2] < 0.1 and (action == -1 or action == 0):
+                reward -= 50
+            # small extra penalty for positions away from the middle
+            # reward -= np.abs(state[0, 2] - 0.5)
             y_target = self.model.predict(state)
             y_target[0][action] = reward if done else reward + self.gamma * np.max(self.model.predict(next_state)[0])
             x_batch.append(state[0])
@@ -167,6 +173,7 @@ class NeuralNet(Player):
             self.epsilon *= self.epsilon_decay
 
         self.save() if self.checkpoints else None
+        self.epsilon *= self.epsilon_decay if self.epsilon > self.epsilon_min else 1
 
     def save(self):
         self.model.save_weights(self.model_path)
@@ -177,9 +184,9 @@ class NeuralNet(Player):
     def score(self, you_scored: bool):
         sign = 1 if you_scored else -1
         self.last_state["reward"] = self.win_reward * sign
+        self.last_state["reward"] -= self.pong_reward if sign == -1 else 0
         self.last_state["done"] = True
-        if self.last_state["state"] is not None:
-            self._memory.append(self.last_state)
+        self._memory.append(self.last_state)
         self._state_reset()
 
     def game_over(self, won: bool):
@@ -193,10 +200,10 @@ class NeuralNet(Player):
 
     def _create_or_load(self):
         # all features need to be normalized respective to the player
-        # features: dt, my_x, my_y, enemy_x, enemy_y, ball_x, ball_y, ball_vel_x, ball_vel_y
-        inps = K.layers.Input(shape=(9,))
+        # features: dt, my_y, enemy_y, ball_x, ball_y, ball_vel_x, ball_vel_y
+        inps = K.layers.Input(shape=(7,))
         # bottleneck layer, maybe it learns how to remove useless info
-        x = K.layers.Dense(6, activation="selu")(inps)
+        x = K.layers.Dense(5, activation="selu")(inps)
         # the actual hidden layers
         x = K.layers.Dense(128, activation="selu")(x)
         x = K.layers.Dense(256, activation="selu")(x)
