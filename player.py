@@ -1,11 +1,13 @@
 import os
 from abc import ABC, abstractmethod
 from collections import deque
+from random import sample
+from typing import Deque, List, Dict, Union
 
 import numpy as np
 import tensorflow.keras as K
-from typing import Deque, List, Tuple
 
+State = Dict[str, Union[np.ndarray, int, bool, None]]
 
 class Player(ABC):
     """
@@ -87,22 +89,128 @@ class NeuralNet(Player):
     """
     tf.keras based deep-Q agent
     """
-    def __init__(self, id, speed_limit: float, model_path: str = "models/DeepQ", training: bool = True,
-                 gamma: float = 0.1, epsilon: float = 0.1, epsilon_decay: float = 0.99, pong_reward: int = 1,
-                 win_reward: int = 20):
+    def __init__(self, id, speed_limit: float, model_path: str = "models/DeepPongQ", training: bool = True,
+                 gamma: float = 0.8, epsilon: float = 0.5, epsilon_decay: float = 0.99, pong_reward: int = 1,
+                 win_reward: int = 20, epsilon_min: float = 0.001, batch_size=256, checkpoints=True):
         super().__init__(id)
+        self.checkpoints = checkpoints
+        self.batch_size = batch_size
+        self.epsilon_min = epsilon_min
         self.win_reward = win_reward
         self.pong_reward = pong_reward
         self.speed_limit = speed_limit
         self.epsilon_decay = epsilon_decay
         self.epsilon = epsilon
-        self.model: K.Model = self._create_or_load()
         self.model_path: str = model_path
         self.training: bool = training
-        self._memory: Deque = deque(maxlen=100000)
+        self._memory: Deque[State] = deque(maxlen=100000)
         self.gamma: float = gamma
         self.actions: List[int] = [1, 0, -1]
         # list of (state, action, reward, next_state, done) tuples
+        self.last_state: State = {
+            "state": None,
+            "action": None,
+            "reward": None,
+            "next_state": None,
+            "done": None
+        }
+        self.model: K.Model = self._create_or_load()
+
+    def play(self, dt: float, player1_pos: np.ndarray, player2_pos: np.ndarray, ball_pos: np.ndarray,
+             ball_vel: np.ndarray) -> float:
+
+        # compute the state-vector
+        if self.id == 0:
+            state = np.array([[dt, player1_pos[0], player1_pos[1], player2_pos[0], player2_pos[1],
+                              ball_pos[0], ball_pos[1], ball_vel[0], ball_vel[1]]])
+        else:
+            # mirror the field to make "finding itself" easier for the NeuralNet
+            state = np.array([[dt, - player2_pos[0] + 1, player2_pos[1], - player1_pos[0] + 1,
+                              player1_pos[1], - ball_pos[0] + 1, ball_pos[1], - ball_vel[0] + 1, ball_vel[1]]])
+
+        # manage memory
+        # if last state exists, but reward is none, the last action did not yield any reward
+        if self.training:
+            if self.last_state["state"] is not None:
+                if self.last_state["reward"] is None:
+                    self.last_state["reward"] = 0
+                self.last_state["next_state"] = state
+                self.last_state["done"] = False
+                self._memory.append(self.last_state)
+            self._state_reset()
+            self.last_state["state"] = state
+        if np.random.rand() <= self.epsilon:
+            action = np.random.choice(self.actions)
+        else:
+            action = np.argmax(self.model(state))
+        self.last_state["action"] = action
+        self.epsilon *= self.epsilon_decay if self.epsilon > self.epsilon_min else 1
+        return action * self.speed_limit
+
+    def train(self):
+        x_batch, y_batch = [], []
+        minibatch = sample(
+            self._memory, min(len(self._memory), self.batch_size))
+        for d in minibatch:
+            state = d["state"]
+            action = d["action"]
+            reward = d["reward"]
+            done = d["done"]
+            next_state = d["next_state"]
+            y_target = self.model.predict(state)
+            y_target[0][action] = reward if done else reward + self.gamma * np.max(self.model.predict(next_state)[0])
+            x_batch.append(state[0])
+            y_batch.append(y_target[0])
+
+        self.model.fit(np.array(x_batch), np.array(y_batch), batch_size=len(x_batch), verbose=1)
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
+
+        self.save() if self.checkpoints else None
+
+    def save(self):
+        self.model.save_weights(self.model_path)
+
+    def pong(self):
+        self.last_state["reward"] = self.pong_reward
+
+    def score(self, you_scored: bool):
+        sign = 1 if you_scored else -1
+        self.last_state["reward"] = self.win_reward * sign
+        self.last_state["done"] = True
+        if self.last_state["state"] is not None:
+            self._memory.append(self.last_state)
+        self._state_reset()
+
+    def game_over(self, won: bool):
+        self.score(won)
+
+    def reload_from_path(self, path):
+        tmp = self.model_path
+        self.model_path = path
+        self.model = self._create_or_load()
+        self.model_path = tmp
+
+    def _create_or_load(self):
+        # all features need to be normalized respective to the player
+        # features: dt, my_x, my_y, enemy_x, enemy_y, ball_x, ball_y, ball_vel_x, ball_vel_y
+        inps = K.layers.Input(shape=(9,))
+        # bottleneck layer, maybe it learns how to remove useless info
+        x = K.layers.Dense(6, activation="selu")(inps)
+        # the actual hidden layers
+        x = K.layers.Dense(128, activation="selu")(x)
+        x = K.layers.Dense(256, activation="selu")(x)
+        x = K.layers.Dense(64, activation="selu")(x)
+        # output
+        x = K.layers.Dense(3, activation="linear")(x)
+        model = K.Model(inputs=inps, outputs=x)
+        if os.path.isdir(self.model_path):
+            model.load_weights(self.model_path)
+        if self.training:
+            model.compile(loss="MSE", optimizer="adam")
+        return model
+
+    def _state_reset(self):
         self.last_state = {
             "state": None,
             "action": None,
@@ -110,56 +218,6 @@ class NeuralNet(Player):
             "next_state": None,
             "done": None
         }
-
-    def play(self, dt: float, player1_pos: np.ndarray, player2_pos: np.ndarray, ball_pos: np.ndarray,
-             ball_vel: np.ndarray) -> float:
-
-        # compute the state-vector
-        if self.id == 0:
-            state = np.array([dt, self.id, player1_pos[0], player1_pos[1], player2_pos[0], player2_pos[1],
-                              ball_pos[0], ball_pos[1], ball_vel[0], ball_vel[1]])
-        else:
-            # mirror the field to make "finding itself" easier for the NeuralNet
-            state = np.array([dt, self.id, - player2_pos[0] + 1, player2_pos[1], - player1_pos[0] + 1,
-                              player1_pos[1], - ball_pos[0] + 1, ball_pos[1], - ball_vel[0] + 1, ball_vel[1]])
-
-        # manage memory
-        # TODO: do not overwrite if last action was succesful
-        if self.last_state["state"] is not None and self.last_state["action"] is not None:
-            self.last_state["reward"] = 0
-            self.last_state["next_state"] = state
-            self.last_state["done"] = False
-
-        self._memory.append(self.last_state)
-
-        if np.random.rand() <= self.epsilon:
-            action = np.random.choice(self.actions)
-        else:
-            action = np.argmax(self.model.predict(state))
-        return action * self.speed_limit
-
-    def pong(self):
-        pass
-
-    def score(self, you_scored: bool):
-        pass
-
-    def game_over(self, won: bool):
-        pass
-
-    def _create_or_load(self):
-        # all features need to be normalized respective to the player
-        # features: dt, my_x, my_y, enemy_x, enemy_y, ball_x, ball_y, ball_vel_x, ball_vel_y
-        inps = K.layers.Input(shape=(9,))
-        x = K.layers.Dense(128, activation="selu")(inps)
-        x = K.layers.Dense(256, activation="selu")(x)
-        x = K.layers.Dense(64, activation="selu")(x)
-        x = K.layers.Dense(3, activation="linear")(x)
-        model = K.Model(inputs=inps, outputs=x)
-        if os.path.isdir(self.model_path):
-            model.load_weights(self.model_path)
-        model.compile(loas="MSE", optimizer="adam")
-        return model
 
 
 class Human(Player):

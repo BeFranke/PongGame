@@ -1,12 +1,15 @@
 import json
 import os
+import warnings
+from random import random
 from sys import argv
 from typing import Dict, List
 
 from model import GameModel
 from player import Player, Human, Dummy, NeuralNet, Heuristic
-from view import GUIController
 
+TRAIN_GAMES = 1000
+STEPS_BETWEEN_TRAINING = 10
 CONFIG_FILE = "config.json"
 DEFAULT_CONFIG = {
     "TRAIN_MODE": False,
@@ -27,6 +30,8 @@ DEFAULT_CONFIG = {
     }
 }
 
+_train_game_runs = True
+_last_game_won_by = -1
 
 def load_config_or_write_defaults() -> Dict:
     """
@@ -66,11 +71,18 @@ def get_players(cfg: Dict, player1_args: Dict = None, player2_args: Dict = None)
         elif player == "Heuristic":
             players.append(Heuristic(id))
         elif player == "NeuralNet":
-            players.append(NeuralNet(id))
+            players.append(
+                NeuralNet(id, cfg["limits"]["max_speed_player"], training=cfg["TRAIN_MODE"])
+            )
         else:
             raise Exception("AI Type not understood!")
 
     return players
+
+def training_game_over_callback(pid: int):
+    global _train_game_runs, _last_game_won_by
+    _train_game_runs = False
+    _last_game_won_by = pid
 
 
 if __name__ == "__main__":
@@ -78,6 +90,7 @@ if __name__ == "__main__":
     player1, player2 = get_players(cfg)
     model = GameModel(cfg, player1, player2)
     if not cfg["TRAIN_MODE"]:
+        from view import GUIController
         # run with GUI, no training
         gui = GUIController(cfg, model.human_input, model.update, model.reset)
         model.gui_update = gui.update
@@ -85,6 +98,32 @@ if __name__ == "__main__":
         gui.run()
 
     else:
-        # TODO: run without GUI and train
-        pass
+        # get the NeuralNet players
+        ais = []
+        if isinstance(player1, NeuralNet):
+            ais.append(player1)
+        if isinstance(player2, NeuralNet):
+            ais.append(player2)
+            player2.model_path = "models/DeepQPlayer2"
+        if not isinstance(player1, NeuralNet) and not isinstance(player2, NeuralNet):
+            warnings.warn("No trainable Ais detected! Running GUI-less without training is only "
+                          "recommended for debugging")
 
+        # run without GUI and train
+        model.won_callback = training_game_over_callback
+        for e in range(TRAIN_GAMES):
+            print(f"game {e+1} of {TRAIN_GAMES}")
+            # simulate the game
+            while _train_game_runs:
+                # simulate a delta around 4 milliseconds
+                delta = 4 + (random() - 0.5) * 2
+                for _ in range(STEPS_BETWEEN_TRAINING):
+                    model.update(delta)
+                    if not _train_game_runs:
+                        break
+
+                for ai in ais:
+                    ai.train()
+
+            _train_game_runs = True
+            model.reset()

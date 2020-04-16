@@ -50,6 +50,7 @@ class GameModel:
         """
         compute next frame
         :param dt: time delta elapsed since last frame in milliseconds
+        :return True if game ended, else false
         """
         # move the ball
         last_pos = self.ball_pos.copy()
@@ -84,7 +85,7 @@ class GameModel:
                     break
 
         # ball bounces on top/bottom
-        elif LIMIT_LOW > self.ball_pos[1]:
+        if LIMIT_LOW > self.ball_pos[1]:
             self.ball_vel[1] *= -1
             self.ball_pos[1] = LIMIT_LOW
 
@@ -93,7 +94,7 @@ class GameModel:
             self.ball_pos[1] = LIMIT_HIGH
 
         # score
-        elif not LIMIT_LOW < self.ball_pos[0] < LIMIT_HIGH:
+        if not LIMIT_LOW < self.ball_pos[0] < LIMIT_HIGH:
             score_player = int(self.ball_pos[0] < HALF)
             self._score(score_player)
 
@@ -120,17 +121,19 @@ class GameModel:
         :param player: id of scoring player
         """
         if player == 0:
-            print("Player 1 scored!")
             self.player_1_score += 1
+            print(f"Player 1 scored! Score: {self.player_1_score}:{self.player_2_score}")
         else:
-            print("Player 2 scored!")
             self.player_2_score += 1
+            print(f"Player 2 scored! Score: {self.player_1_score}:{self.player_2_score}")
 
         if self.player_1_score == self.cfg["limits"]["points_to_win"]:
+            print("--------------------PLAYER 1 WINS THE GAME-------------------------")
             self.player1.game_over(True)
             self.player2.game_over(False)
             self.won_callback(0)
         elif self.player_2_score == self.cfg["limits"]["points_to_win"]:
+            print("--------------------PLAYER 2 WINS THE GAME-------------------------")
             self.player1.game_over(False)
             self.player2.game_over(True)
             self.won_callback(1)
