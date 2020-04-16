@@ -90,7 +90,7 @@ class NeuralNet(Player):
     tf.keras based deep-Q agent
     """
     def __init__(self, id, speed_limit: float, model_path: str = "models/DeepPongQ", training: bool = True,
-                 gamma: float = 0.8, epsilon: float = 0.7, epsilon_decay: float = 0.99, pong_reward: int = 1,
+                 gamma: float = 0.8, epsilon: float = 0.7, epsilon_decay: float = 0.95, pong_reward: int = 1,
                  win_reward: int = 0, epsilon_min: float = 0.001, batch_size=1024, checkpoints=True):
         super().__init__(id)
         self.checkpoints = checkpoints
@@ -147,7 +147,7 @@ class NeuralNet(Player):
         self.last_state["action"] = action
         return my_pos[1] + action * self.speed_limit
 
-    def train(self):
+    def train_minibatch(self):
         x_batch, y_batch = [], []
         minibatch = sample(
             self._memory, min(len(self._memory), self.batch_size))
@@ -174,6 +174,31 @@ class NeuralNet(Player):
 
         self.save() if self.checkpoints else None
         self.epsilon *= self.epsilon_decay if self.epsilon > self.epsilon_min else 1
+
+    def train(self):
+        X = np.zeros((len(self._memory), 7))
+        y = np.zeros((len(self._memory), 3))
+        for i, d in enumerate(self._memory):
+            state = d["state"]
+            action = d["action"]
+            reward = d["reward"]
+            done = d["done"]
+            next_state = d["next_state"]
+            # extra penalty for useless actions
+            if state[0, 2] > 0.9 and (action == 1 or action == 0) or \
+                    state[0, 2] < 0.1 and (action == -1 or action == 0):
+                reward -= 50
+
+            y_target = self.model.predict(state)
+            y_target[0][action] = reward if done else reward + self.gamma * np.max(self.model.predict(next_state)[0])
+            X[i][:] = state[0][:]
+            y[i][:] = y_target[0][:]
+
+        self.model.fit(X, y, batch_size=self.batch_size, verbose=1, epochs=1)
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
+
+        self.save() if self.checkpoints else None
 
     def save(self):
         self.model.save_weights(self.model_path)

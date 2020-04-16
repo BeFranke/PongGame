@@ -105,6 +105,7 @@ if __name__ == "__main__":
         gui.run()
 
     else:
+        # old version
         # get the NeuralNet players
         ais = []
         if isinstance(player1, NeuralNet):
@@ -128,10 +129,13 @@ if __name__ == "__main__":
                     if not _train_game_runs:
                         break
 
-                ais[0].train()
-                # only the first will be trained to save time
-                if len(ais) > 1:
-                    ais[1].reload_from_path(ais[0].model_path)
+            ais[0].train()
+            # only the first will be trained to save time
+            if len(ais) > 1:
+                ais[1].reload_from_path(ais[0].model_path)
 
             _train_game_runs = True
             model.reset()
+        # TODO
+        # idea: rewrite the training so that data is generated on one thread while
+        # another thread pulls from it and trains the models
