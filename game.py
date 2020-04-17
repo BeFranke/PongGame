@@ -92,6 +92,8 @@ def training_game_over_callback(pid: int):
     _last_game_won_by = pid
 
 
+last_epsilon = 0.7 * 0.95**10
+
 if __name__ == "__main__":
     cfg = load_config_or_write_defaults()
     player1, player2 = get_players(cfg)
@@ -115,6 +117,10 @@ if __name__ == "__main__":
         if not isinstance(player1, NeuralNet) and not isinstance(player2, NeuralNet):
             warnings.warn("No trainable Ais detected! Running GUI-less without training is only "
                           "recommended for debugging")
+
+        player1.epsilon = last_epsilon
+        # small trick to increase the efficiency of data generation
+        player2._memory = player1._memory
 
         # run without GUI and train
         model.won_callback = training_game_over_callback

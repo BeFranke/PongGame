@@ -8,6 +8,7 @@ import numpy as np
 import tensorflow.keras as K
 
 State = Dict[str, Union[np.ndarray, int, bool, None]]
+STATE_DIM = 6
 
 class Player(ABC):
     """
@@ -90,8 +91,8 @@ class NeuralNet(Player):
     tf.keras based deep-Q agent
     """
     def __init__(self, id, speed_limit: float, model_path: str = "models/DeepPongQ", training: bool = True,
-                 gamma: float = 0.8, epsilon: float = 0.7, epsilon_decay: float = 0.95, pong_reward: int = 1,
-                 win_reward: int = 0, epsilon_min: float = 0.001, batch_size=1024, checkpoints=True):
+                 gamma: float = 0.95, epsilon: float = 0.9, epsilon_decay: float = 0.99, pong_reward: int = 1,
+                 win_reward: int = 2, epsilon_min: float = 0.001, batch_size=1024, checkpoints=True):
         super().__init__(id)
         self.checkpoints = checkpoints
         self.batch_size = batch_size
@@ -122,11 +123,11 @@ class NeuralNet(Player):
         # compute the state-vector
         if self.id == 0:
             my_pos = player1_pos
-            state = np.array([[dt, player1_pos[1], player2_pos[1], ball_pos[0], ball_pos[1], ball_vel[0], ball_vel[1]]])
+            state = np.array([[player1_pos[1], player2_pos[1], ball_pos[0], ball_pos[1], ball_vel[0], ball_vel[1]]])
         else:
             # mirror the field to make "finding itself" easier for the NeuralNet
             my_pos = player2_pos
-            state = np.array([[dt, player2_pos[1], player1_pos[1], - ball_pos[0] + 1, ball_pos[1],
+            state = np.array([[player2_pos[1], player1_pos[1], - ball_pos[0] + 1, ball_pos[1],
                                - ball_vel[0], ball_vel[1]]])
 
         # manage memory
@@ -176,7 +177,7 @@ class NeuralNet(Player):
         self.epsilon *= self.epsilon_decay if self.epsilon > self.epsilon_min else 1
 
     def train(self):
-        X = np.zeros((len(self._memory), 7))
+        X = np.zeros((len(self._memory), 6))
         y = np.zeros((len(self._memory), 3))
         for i, d in enumerate(self._memory):
             state = d["state"]
@@ -187,14 +188,14 @@ class NeuralNet(Player):
             # extra penalty for useless actions
             if state[0, 2] > 0.9 and (action == 1 or action == 0) or \
                     state[0, 2] < 0.1 and (action == -1 or action == 0):
-                reward -= 50
+                reward -= 2
 
-            y_target = self.model.predict(state)
-            y_target[0][action] = reward if done else reward + self.gamma * np.max(self.model.predict(next_state)[0])
+            y_target = self.model(state).numpy()
+            y_target[0][action] = reward if done else reward + self.gamma * np.max(np.asarray(self.model(next_state)[0]))
             X[i][:] = state[0][:]
             y[i][:] = y_target[0][:]
 
-        self.model.fit(X, y, batch_size=self.batch_size, verbose=1, epochs=1)
+        self.model.fit(X, y, batch_size=self.batch_size, verbose=2, epochs=5, shuffle=True)
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
@@ -209,7 +210,6 @@ class NeuralNet(Player):
     def score(self, you_scored: bool):
         sign = 1 if you_scored else -1
         self.last_state["reward"] = self.win_reward * sign
-        self.last_state["reward"] -= self.pong_reward if sign == -1 else 0
         self.last_state["done"] = True
         self._memory.append(self.last_state)
         self._state_reset()
@@ -226,20 +226,21 @@ class NeuralNet(Player):
     def _create_or_load(self):
         # all features need to be normalized respective to the player
         # features: dt, my_y, enemy_y, ball_x, ball_y, ball_vel_x, ball_vel_y
-        inps = K.layers.Input(shape=(7,))
+        inps = K.layers.Input(shape=(STATE_DIM,))
         # bottleneck layer, maybe it learns how to remove useless info
-        x = K.layers.Dense(5, activation="selu")(inps)
+        # x = K.layers.Dense(5, activation="selu")(inps)
         # the actual hidden layers
-        x = K.layers.Dense(128, activation="selu")(x)
-        x = K.layers.Dense(256, activation="selu")(x)
-        x = K.layers.Dense(64, activation="selu")(x)
+        x = K.layers.Dense(128, activation="elu")(inps)
+        x = K.layers.Dense(256, activation="elu")(x)
+        x = K.layers.Dense(256, activation="elu")(x)
+        x = K.layers.Dense(64, activation="elu")(x)
         # output
         x = K.layers.Dense(3, activation="linear")(x)
         model = K.Model(inputs=inps, outputs=x)
         if os.path.isdir(self.model_path):
             model.load_weights(self.model_path)
         if self.training:
-            model.compile(loss="MSE", optimizer="adam")
+            model.compile(loss="MSE", optimizer="rmsprop")
         return model
 
     def _state_reset(self):
