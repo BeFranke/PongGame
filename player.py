@@ -91,8 +91,8 @@ class NeuralNet(Player):
     tf.keras based deep-Q agent
     """
     def __init__(self, id, speed_limit: float, model_path: str = "models/DeepPongQ", training: bool = True,
-                 gamma: float = 0.95, epsilon: float = 0.9, epsilon_decay: float = 0.99, pong_reward: int = 1,
-                 win_reward: int = 2, epsilon_min: float = 0.001, batch_size=1024, checkpoints=True):
+                 gamma: float = 0.99, epsilon: float = 0.9, epsilon_decay: float = 0.99, pong_reward: int = 0,
+                 win_reward: int = 1, epsilon_min: float = 0.001, batch_size=1024, checkpoints=True):
         super().__init__(id)
         self.checkpoints = checkpoints
         self.batch_size = batch_size
@@ -138,7 +138,9 @@ class NeuralNet(Player):
                     self.last_state["reward"] = 0
                 self.last_state["next_state"] = state
                 self.last_state["done"] = False
-                self._memory.append(self.last_state)
+                # only save 1/5 th of uninteresting states to reduce correlation
+                if np.random.rand() < 0.2:
+                    self._memory.append(self.last_state)
             self._state_reset()
             self.last_state["state"] = state
         if np.random.rand() <= self.epsilon:
@@ -225,15 +227,14 @@ class NeuralNet(Player):
 
     def _create_or_load(self):
         # all features need to be normalized respective to the player
-        # features: dt, my_y, enemy_y, ball_x, ball_y, ball_vel_x, ball_vel_y
+        # features: my_y, enemy_y, ball_x, ball_y, ball_vel_x, ball_vel_y
         inps = K.layers.Input(shape=(STATE_DIM,))
         # bottleneck layer, maybe it learns how to remove useless info
         # x = K.layers.Dense(5, activation="selu")(inps)
         # the actual hidden layers
         x = K.layers.Dense(128, activation="elu")(inps)
+        x = K.layers.Dense(512, activation="elu")(x)
         x = K.layers.Dense(256, activation="elu")(x)
-        x = K.layers.Dense(256, activation="elu")(x)
-        x = K.layers.Dense(64, activation="elu")(x)
         # output
         x = K.layers.Dense(3, activation="linear")(x)
         model = K.Model(inputs=inps, outputs=x)
@@ -271,6 +272,30 @@ class Human(Player):
     def game_over(self, won: bool):
         pass
 
+class Classic(Player):
+    """
+    Just moves up and down
+    """
+
+    def __init__(self, id):
+        super().__init__(id)
+        self.state = 1
+
+    def play(self, dt: float, player1_pos: np.ndarray, player2_pos: np.ndarray, ball_pos: np.ndarray,
+             ball_vel: np.ndarray) -> float:
+        my_pos = player1_pos[1] if self.id == 0 else player2_pos[1]
+        if my_pos > 0.8 or my_pos < 0.2:
+            self.state *= -1
+        return my_pos + self.state
+
+    def pong(self):
+        pass
+
+    def score(self, you_scored: bool):
+        pass
+
+    def game_over(self, won: bool):
+        pass
 
 class Heuristic(Player):
     """

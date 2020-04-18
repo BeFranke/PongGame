@@ -6,7 +6,7 @@ from sys import argv
 from typing import Dict, List
 
 from model import GameModel
-from player import Player, Human, Dummy, NeuralNet, Heuristic
+from player import Player, Human, Dummy, NeuralNet, Heuristic, Classic
 
 TRAIN_GAMES = 10000
 STEPS_BETWEEN_TRAINING = 400
@@ -81,6 +81,8 @@ def get_players(cfg: Dict, player1_args: Dict = None, player2_args: Dict = None)
             players.append(
                 NeuralNet(**args)
             )
+        elif player == "Classic":
+            players.append(Classic(id))
         else:
             raise Exception("AI Type not understood!")
 
@@ -92,7 +94,7 @@ def training_game_over_callback(pid: int):
     _last_game_won_by = pid
 
 
-last_epsilon = 0.7 * 0.95**10
+last_epsilon = 0.7
 
 if __name__ == "__main__":
     cfg = load_config_or_write_defaults()
@@ -120,7 +122,8 @@ if __name__ == "__main__":
 
         player1.epsilon = last_epsilon
         # small trick to increase the efficiency of data generation
-        player2._memory = player1._memory
+        if len(ais) > 1:
+            ais[0]._memory = ais[1]._memory
 
         # run without GUI and train
         model.won_callback = training_game_over_callback
@@ -128,7 +131,7 @@ if __name__ == "__main__":
             print(f"game {e+1} of {TRAIN_GAMES}")
             # simulate the game
             while _train_game_runs:
-                # simulate a delta around 4 milliseconds
+                # simulate time delta
                 delta = 0.01 + (random() - 0.5) * 0.01
                 for _ in range(STEPS_BETWEEN_TRAINING):
                     model.update(delta)
@@ -142,6 +145,3 @@ if __name__ == "__main__":
 
             _train_game_runs = True
             model.reset()
-        # TODO
-        # idea: rewrite the training so that data is generated on one thread while
-        # another thread pulls from it and trains the models
