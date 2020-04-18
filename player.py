@@ -238,8 +238,10 @@ class NeuralNet(Player):
         # output
         x = K.layers.Dense(3, activation="linear")(x)
         model = K.Model(inputs=inps, outputs=x)
-        if os.path.isdir(self.model_path):
+        try:
             model.load_weights(self.model_path)
+        except:
+            print("No model found, creating new one..")
         if self.training:
             model.compile(loss="MSE", optimizer="rmsprop")
         return model
