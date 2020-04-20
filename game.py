@@ -9,7 +9,6 @@ from model import GameModel
 from player import Player, Human, Dummy, NeuralNet, Heuristic, Classic
 
 TRAIN_GAMES = 10000
-STEPS_BETWEEN_TRAINING = 400
 CONFIG_FILE = "config.json"
 DEFAULT_CONFIG = {
     "TRAIN_MODE": False,
@@ -32,6 +31,7 @@ DEFAULT_CONFIG = {
 
 _train_game_runs = True
 _last_game_won_by = -1
+_target_update_after_steps = 10
 
 def load_config_or_write_defaults() -> Dict:
     """
@@ -133,15 +133,16 @@ if __name__ == "__main__":
             while _train_game_runs:
                 # simulate time delta
                 delta = 0.01 + (random() - 0.5) * 0.01
-                for _ in range(STEPS_BETWEEN_TRAINING):
-                    model.update(delta)
-                    if not _train_game_runs:
-                        break
+                model.update(delta)
 
             ais[0].train()
             # only the first will be trained to save time
             if len(ais) > 1:
                 ais[1].reload_from_path(ais[0].model_path)
+
+            if e % _target_update_after_steps == 0:
+                print("updating target model...")
+                ais[0].update_target_model()
 
             _train_game_runs = True
             model.reset()

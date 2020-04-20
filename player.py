@@ -1,7 +1,5 @@
-import os
 from abc import ABC, abstractmethod
 from collections import deque
-from random import sample
 from typing import Deque, List, Dict, Union
 
 import numpy as np
@@ -91,8 +89,8 @@ class NeuralNet(Player):
     tf.keras based deep-Q agent
     """
     def __init__(self, id, speed_limit: float, model_path: str = "models/DeepPongQ", training: bool = True,
-                 gamma: float = 0.99, epsilon: float = 0.9, epsilon_decay: float = 0.99, pong_reward: int = 0,
-                 win_reward: int = 1, epsilon_min: float = 0.001, batch_size=1024, checkpoints=True):
+                 gamma: float = 0.99, epsilon: float = 0.7, epsilon_decay: float = 0.99, pong_reward: int = 0,
+                 win_reward: int = 1, epsilon_min: float = 0.001, batch_size=2048, checkpoints=True):
         super().__init__(id)
         self.checkpoints = checkpoints
         self.batch_size = batch_size
@@ -116,6 +114,7 @@ class NeuralNet(Player):
             "done": None
         }
         self.model: K.Model = self._create_or_load()
+        self.target_model: K.Model = self._create_or_load()
 
     def play(self, dt: float, player1_pos: np.ndarray, player2_pos: np.ndarray, ball_pos: np.ndarray,
              ball_vel: np.ndarray) -> float:
@@ -138,8 +137,8 @@ class NeuralNet(Player):
                     self.last_state["reward"] = 0
                 self.last_state["next_state"] = state
                 self.last_state["done"] = False
-                # only save 1/5 th of uninteresting states to reduce correlation
-                if np.random.rand() < 0.2:
+                # only save 1/10 th of uninteresting states to reduce correlation
+                if np.random.rand() < 0.1:
                     self._memory.append(self.last_state)
             self._state_reset()
             self.last_state["state"] = state
@@ -150,34 +149,6 @@ class NeuralNet(Player):
         self.last_state["action"] = action
         return my_pos[1] + action * self.speed_limit
 
-    def train_minibatch(self):
-        x_batch, y_batch = [], []
-        minibatch = sample(
-            self._memory, min(len(self._memory), self.batch_size))
-        for d in minibatch:
-            state = d["state"]
-            action = d["action"]
-            reward = d["reward"]
-            done = d["done"]
-            next_state = d["next_state"]
-            # extra penalty for useless actions
-            if state[0, 2] > 0.9 and (action == 1 or action == 0) or \
-                    state[0, 2] < 0.1 and (action == -1 or action == 0):
-                reward -= 50
-            # small extra penalty for positions away from the middle
-            # reward -= np.abs(state[0, 2] - 0.5)
-            y_target = self.model.predict(state)
-            y_target[0][action] = reward if done else reward + self.gamma * np.max(self.model.predict(next_state)[0])
-            x_batch.append(state[0])
-            y_batch.append(y_target[0])
-
-        self.model.fit(np.array(x_batch), np.array(y_batch), batch_size=len(x_batch), verbose=1)
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
-
-        self.save() if self.checkpoints else None
-        self.epsilon *= self.epsilon_decay if self.epsilon > self.epsilon_min else 1
-
     def train(self):
         X = np.zeros((len(self._memory), 6))
         y = np.zeros((len(self._memory), 3))
@@ -187,17 +158,14 @@ class NeuralNet(Player):
             reward = d["reward"]
             done = d["done"]
             next_state = d["next_state"]
-            # extra penalty for useless actions
-            if state[0, 2] > 0.9 and (action == 1 or action == 0) or \
-                    state[0, 2] < 0.1 and (action == -1 or action == 0):
-                reward -= 2
 
-            y_target = self.model(state).numpy()
-            y_target[0][action] = reward if done else reward + self.gamma * np.max(np.asarray(self.model(next_state)[0]))
+            y_target = self.target_model(state).numpy()
+            y_target[0][action] = reward if done \
+                else reward + self.gamma * np.max(np.asarray(self.target_model(next_state)[0]))
             X[i][:] = state[0][:]
             y[i][:] = y_target[0][:]
 
-        self.model.fit(X, y, batch_size=self.batch_size, verbose=2, epochs=5, shuffle=True)
+        self.model.fit(X, y, batch_size=self.batch_size, verbose=2, epochs=50, shuffle=True)
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
@@ -225,21 +193,29 @@ class NeuralNet(Player):
         self.model = self._create_or_load()
         self.model_path = tmp
 
+    def update_target_model(self):
+        self.target_model.load_weights(self.model_path)
+
     def _create_or_load(self):
         # all features need to be normalized respective to the player
         # features: my_y, enemy_y, ball_x, ball_y, ball_vel_x, ball_vel_y
         inps = K.layers.Input(shape=(STATE_DIM,))
-        # bottleneck layer, maybe it learns how to remove useless info
-        # x = K.layers.Dense(5, activation="selu")(inps)
         # the actual hidden layers
+        # deep version
+        """
         x = K.layers.Dense(128, activation="elu")(inps)
+        x = K.layers.Dense(256, activation="elu")(x)
         x = K.layers.Dense(512, activation="elu")(x)
         x = K.layers.Dense(256, activation="elu")(x)
+        """
+        x = K.layers.Dense(48, activation="tanh")(inps)
+        x = K.layers.Dense(22, activation="tanh")(x)
         # output
         x = K.layers.Dense(3, activation="linear")(x)
         model = K.Model(inputs=inps, outputs=x)
         try:
             model.load_weights(self.model_path)
+            print("loading model...")
         except:
             print("No model found, creating new one..")
         if self.training:
