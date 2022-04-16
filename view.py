@@ -58,7 +58,7 @@ class GUIController(App):
         self._rel_player1 = cfg["positions"]["player1"]
         self.game = None
         self.human_input = human_callback
-        self._keyboard = Window.request_keyboard(self._keyboard_closed, self)
+        self._keyboard = Window.request_keyboard(self._keyboard_closed, self.root)
         self._keyboard.bind(on_key_down=self._on_keyboard_down, on_key_up=self._on_keyboard_up)
         self.model_update_fun = update_fun
         self.resume_fun = resume_fun

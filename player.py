@@ -3,7 +3,8 @@ from collections import deque
 from typing import Deque, List, Dict, Union
 
 import numpy as np
-import tensorflow.keras as K
+import torch
+
 
 State = Dict[str, Union[np.ndarray, int, bool, None]]
 STATE_DIM = 6
