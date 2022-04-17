@@ -6,7 +6,7 @@ from sys import argv
 from typing import Dict, List
 
 from model import GameModel
-from player import Player, Human, Dummy, NeuralNet, Heuristic, Classic
+from player import Player, Human, Dummy, NeuralNet, Classic
 
 TRAIN_GAMES = 10000
 CONFIG_FILE = "config.json"
@@ -21,6 +21,7 @@ DEFAULT_CONFIG = {
     "players": ["Human", "Heuristic"],
     "limits": {
         "resolution": [800, 600],
+        "field_size": [80, 60],
         "max_speed_ball": 10000,
         "speedup": 1.05,
         "points_to_win": 11,
@@ -68,8 +69,6 @@ def get_players(cfg: Dict, player1_args: Dict = None, player2_args: Dict = None)
             players.append(Human(id))
         elif player == "Dummy":
             players.append(Dummy(id))
-        elif player == "Heuristic":
-            players.append(Heuristic(id))
         elif player == "NeuralNet":
             args = {
                 "id": id,
@@ -94,8 +93,6 @@ def training_game_over_callback(pid: int):
     _last_game_won_by = pid
 
 
-last_epsilon = 0.7
-
 if __name__ == "__main__":
     cfg = load_config_or_write_defaults()
     player1, player2 = get_players(cfg)
@@ -109,18 +106,16 @@ if __name__ == "__main__":
         gui.run()
 
     else:
-        # old version
         # get the NeuralNet players
         ais = []
         if isinstance(player1, NeuralNet):
             ais.append(player1)
         if isinstance(player2, NeuralNet):
             ais.append(player2)
-        if not isinstance(player1, NeuralNet) and not isinstance(player2, NeuralNet):
+        if not ais:
             warnings.warn("No trainable Ais detected! Running GUI-less without training is only "
                           "recommended for debugging")
 
-        player1.epsilon = last_epsilon
         # small trick to increase the efficiency of data generation
         if len(ais) > 1:
             ais[0]._memory = ais[1]._memory

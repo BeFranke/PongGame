@@ -1,24 +1,19 @@
 from typing import Dict, Callable
 
 import numpy as np
+import torch
 
 from player import Player
 
 """
-ALL VALUES IN THE MODEL CLASS ARE NORMED TO [LIMIT_LOW, LIMIT_HIGH]
+ALL VALUES IN THE MODEL CLASS ARE NORMED TO [0, 1]
 """
-LIMIT_LOW = 0       # TODO: There is a bug that occurs when this is set below 0. Fix.
-LIMIT_HIGH = 2**32  # Depending on the inner working of the compiler, this may already be too high TODO experiment
 
 # size of the players' paddles
-PADDLE_SIZE = np.array([25.0 / 800, 200.0 / 600]) * (LIMIT_HIGH - LIMIT_LOW)
+PADDLE_SIZE = np.array([25.0 / 800, 200.0 / 600])
 
 # x coordinate that marks the half of the game field
-HALF = (LIMIT_HIGH - LIMIT_LOW) / 2.0
-
-# utillity functions for getting a [0, 1] value from game coordinates, and the other way around
-norm = lambda x: (x - LIMIT_LOW) / (LIMIT_HIGH - LIMIT_LOW)
-unnorm = lambda x: x * (LIMIT_HIGH - LIMIT_LOW) + LIMIT_LOW
+HALF = 0.5
 
 
 class GameModel:
@@ -32,9 +27,9 @@ class GameModel:
         self.player1: Player = player1
         self.player2: Player = player2
         self.cfg: Dict = cfg
-        self.player_1_pos: np.ndarray = unnorm(np.array(cfg["positions"]["player1"]))
-        self.player_2_pos: np.ndarray = unnorm(np.array(cfg["positions"]["player2"]))
-        self.speed_limit = unnorm(cfg["limits"]["max_speed_player"])
+        self.player_1_pos: np.ndarray = np.array(cfg["positions"]["player1"])
+        self.player_2_pos: np.ndarray = np.array(cfg["positions"]["player2"])
+        self.speed_limit = cfg["limits"]["max_speed_player"]
         self.ball_pos: np.ndarray = np.zeros(2)
         self.ball_vel: np.ndarray = np.zeros(2)
         self._reset_ball()
@@ -67,7 +62,6 @@ class GameModel:
         # player hits ball
         if (last_pos[0] <= x_bound <= self.ball_pos[0] or last_pos[0] >= x_bound >= self.ball_pos[0])\
                 and np.sign(self.ball_pos[0] - last_pos[0]) == np.sign(self.ball_pos[0] - HALF):
-            # print("TEST")
             # trajectory-based check
             # generate 100 points on the trajectory, collision check for each of them
             for i in np.linspace(0, 1, self.path_res):
@@ -86,24 +80,21 @@ class GameModel:
                     break
 
         # ball bounces on top/bottom
-        if LIMIT_LOW > self.ball_pos[1]:
+        if 0 > self.ball_pos[1]:
             self.ball_vel[1] *= -1
-            self.ball_pos[1] = LIMIT_LOW
+            self.ball_pos[1] = 0
 
-        elif LIMIT_HIGH < self.ball_pos[1]:
+        elif 1 < self.ball_pos[1]:
             self.ball_vel[1] *= -1
-            self.ball_pos[1] = LIMIT_HIGH
+            self.ball_pos[1] = 1
 
         # score
-        if not LIMIT_LOW < self.ball_pos[0] < LIMIT_HIGH:
+        if not 0 < self.ball_pos[0] < 1:
             score_player = int(self.ball_pos[0] < HALF)
             self._score(score_player)
 
-        new_player1_y = unnorm(
-            self.player1.play(dt, norm(self.player_1_pos), norm(self.player_2_pos), norm(self.ball_pos),
-                              norm(self.ball_vel)))
-        new_player2_y = unnorm(self.player2.play(dt, norm(self.player_1_pos), norm(self.player_2_pos),
-                                                 norm(self.ball_pos), norm(self.ball_vel)))
+        new_player1_y = self.player1.play(dt, self.player_1_pos, self.player_2_pos, self.ball_pos, self.ball_vel)
+        new_player2_y = self.player2.play(dt, self.player_1_pos, self.player_2_pos, self.ball_pos, self.ball_vel)
 
         # if player 1 is human, this is where key input gets included (then new_player1_y == self.player_1_pos)
         new_player1_y += self._human_state * self.speed_limit
@@ -111,10 +102,7 @@ class GameModel:
         self.player_1_pos[1] = self._trim_to_valid(self.player_1_pos[1], new_player1_y)
         self.player_2_pos[1] = self._trim_to_valid(self.player_2_pos[1], new_player2_y)
 
-        self.gui_update(norm(self.player_1_pos), norm(self.player_2_pos), self.player_1_score,
-                        self.player_2_score, norm(self.ball_pos))
-
-        # print(f"new ball_pos is [{self.ball_pos[0]}, {self.ball_pos[1]}], vel [{self.ball_vel[0], self.ball_vel[1]}]")
+        self.gui_update(self.player_1_pos, self.player_2_pos, self.player_1_score, self.player_2_score, self.ball_pos)
 
     def _score(self, player: int) -> None:
         """
@@ -147,13 +135,12 @@ class GameModel:
         """
         put the ball in the middle, assign a semi-random velocity to it
         """
-        self.ball_pos = np.array(self.cfg["positions"]["ball"], dtype=np.float64) * (LIMIT_HIGH - LIMIT_LOW) + LIMIT_LOW
+        self.ball_pos = np.array(self.cfg["positions"]["ball"], dtype=np.float64)
         self.ball_vel = np.array(self.cfg["positions"]["ball_vel"], dtype=np.float64)
         sign_x = np.random.choice([-1, 1])
         rand_y = (np.random.rand() - 0.5) * self.ball_vel[0]
         self.ball_vel[1] += rand_y
         self.ball_vel[0] *= sign_x
-        self.ball_vel *= (LIMIT_HIGH - LIMIT_LOW) + LIMIT_LOW
 
     def human_input(self, state: int) -> None:
         """
@@ -190,10 +177,10 @@ class GameModel:
             new_y = old_y + self.speed_limit
         elif new_y - old_y < - self.speed_limit:
             new_y = old_y - self.speed_limit
-        if new_y < LIMIT_LOW:
-            new_y = LIMIT_LOW
-        elif new_y > LIMIT_HIGH:
-            new_y = LIMIT_HIGH
+        if new_y < 0:
+            new_y = 0
+        elif new_y > 1:
+            new_y = 1
         return new_y
 
     def reset(self) -> None:
@@ -202,6 +189,7 @@ class GameModel:
         """
         self.player_1_score = 0
         self.player_2_score = 0
-        self.player_1_pos: np.ndarray = unnorm(np.array(self.cfg["positions"]["player1"]))
-        self.player_2_pos: np.ndarray = unnorm(np.array(self.cfg["positions"]["player2"]))
+        self.player_1_pos: np.ndarray = np.array(self.cfg["positions"]["player1"])
+        self.player_2_pos: np.ndarray = np.array(self.cfg["positions"]["player2"])
         self._reset_ball()
+        

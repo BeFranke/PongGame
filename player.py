@@ -1,13 +1,15 @@
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import Deque, List, Dict, Union
+from typing import Deque, List, Dict, Tuple, Union
 
 import numpy as np
 import torch
+from tqdm import tqdm
 
 
-State = Dict[str, Union[np.ndarray, int, bool, None]]
 STATE_DIM = 6
+TRAIN_EPOCHS = 100
+MEMORY_LIMIT = 10000
 
 class Player(ABC):
     """
@@ -22,17 +24,12 @@ class Player(ABC):
         self.id = id
 
     @abstractmethod
-    def play(self, dt: float, player1_pos: np.ndarray, player2_pos: np.ndarray, ball_pos: np.ndarray,
-             ball_vel: np.ndarray) -> float:
+    def play(self, dt: float, new_image) -> float:
         """
         generic play method. Take in game state and return desired new y-position. All positions can be assumed to be
         normed to [0, 1]
         :param dt: time delta in milliseconds
-        :param player1_pos: position of player 1 paddle as [x, y]
-        :param player2_pos: position of player 2 paddle as [x, y
-        :param ball_pos: position of pong ball as [x, y]
-        :param ball_vel: velocity of pong ball as [x_vel, y_vel]
-        :return: new y coordinate in [0, 1].
+        :param new_image: torch.tensor of the current game state
         If the returned position is too far away from the last position (speed limit in config file),
         the game will only update the position to the allowed extent
         """
@@ -87,35 +84,32 @@ class Dummy(Player):
 
 class NeuralNet(Player):
     """
-    tf.keras based deep-Q agent
+    torch-based deep-Q agent
     """
     def __init__(self, id, speed_limit: float, model_path: str = "models/DeepPongQ", training: bool = True,
-                 gamma: float = 0.99, epsilon: float = 0.7, epsilon_decay: float = 0.99, pong_reward: int = 0,
+                 gamma: float = 0.99, epsilon: float = 0.99, epsilon_decay: float = 0.9,
                  win_reward: int = 1, epsilon_min: float = 0.001, batch_size=2048, checkpoints=True):
         super().__init__(id)
+        # hyperparameters
         self.checkpoints = checkpoints
         self.batch_size = batch_size
         self.epsilon_min = epsilon_min
         self.win_reward = win_reward
-        self.pong_reward = pong_reward
         self.speed_limit = speed_limit
         self.epsilon_decay = epsilon_decay
         self.epsilon = epsilon
         self.model_path: str = model_path
         self.training: bool = training
-        self._memory: Deque[State] = deque(maxlen=100000)
         self.gamma: float = gamma
         self.actions: List[int] = [1, 0, -1]
-        # list of (state, action, reward, next_state, done) tuples
-        self.last_state: State = {
-            "state": None,
-            "action": None,
-            "reward": None,
-            "next_state": None,
-            "done": None
-        }
-        self.model: K.Model = self._create_or_load()
-        self.target_model: K.Model = self._create_or_load()
+        self.model, self.optimizer, self.loss = self._create_or_load()
+        self.target_model = self.model.copy()
+
+        # memory
+        self.states = torch.zeros((MEMORY_LIMIT, STATE_DIM), dtype=torch.float32)
+        self.actions = torch.zeros(MEMORY_LIMIT, dtype=torch.uint8)
+        self.rewards = torch.zeros(MEMORY_LIMIT)
+        self.done = torch.zeros(MEMORY_LIMIT, dtype=torch.bool)
 
     def play(self, dt: float, player1_pos: np.ndarray, player2_pos: np.ndarray, ball_pos: np.ndarray,
              ball_vel: np.ndarray) -> float:
@@ -123,36 +117,35 @@ class NeuralNet(Player):
         # compute the state-vector
         if self.id == 0:
             my_pos = player1_pos
-            state = np.array([[player1_pos[1], player2_pos[1], ball_pos[0], ball_pos[1], ball_vel[0], ball_vel[1]]])
+            state = torch.tensor([[player1_pos[1], player2_pos[1], ball_pos[0], ball_pos[1], ball_vel[0], ball_vel[1]]], dtype=torch.float32)
         else:
             # mirror the field to make "finding itself" easier for the NeuralNet
             my_pos = player2_pos
-            state = np.array([[player2_pos[1], player1_pos[1], - ball_pos[0] + 1, ball_pos[1],
-                               - ball_vel[0], ball_vel[1]]])
+            state = torch.tensor([[player2_pos[1], player1_pos[1], - ball_pos[0] + 1, ball_pos[1],
+                               - ball_vel[0], ball_vel[1]]], dtype=torch.float32)
 
         # manage memory
-        # if last state exists, but reward is none, the last action did not yield any reward
         if self.training:
-            if self.last_state["state"] is not None:
-                if self.last_state["reward"] is None:
-                    self.last_state["reward"] = 0
-                self.last_state["next_state"] = state
-                self.last_state["done"] = False
-                # only save 1/10 th of uninteresting states to reduce correlation
-                if np.random.rand() < 0.1:
-                    self._memory.append(self.last_state)
-            self._state_reset()
-            self.last_state["state"] = state
-        if np.random.rand() <= self.epsilon:
-            action = np.random.choice(self.actions)
+            
+
+            if np.random.rand() <= self.epsilon:
+                action = np.random.choice(self.actions)
+            else:
+                action = self.actions[int(torch.argmax(self.model(state)))]
         else:
-            action = self.actions[int(np.argmax(self.model(state)))]
+            action = self.actions[int(torch.argmax(self.model(state)))]
+
         self.last_state["action"] = action
         return my_pos[1] + action * self.speed_limit
 
+    def play(self, dt, new_image):
+        pass
+
     def train(self):
-        X = np.zeros((len(self._memory), 6))
-        y = np.zeros((len(self._memory), 3))
+        self.model.train()
+        self.target_model.eval()
+        X = torch.zeros((len(self._memory), 6))
+        y = torch.zeros((len(self._memory), 3))
         for i, d in enumerate(self._memory):
             state = d["state"]
             action = d["action"]
@@ -160,23 +153,33 @@ class NeuralNet(Player):
             done = d["done"]
             next_state = d["next_state"]
 
-            y_target = self.target_model(state).numpy()
+            y_target = self.target_model(state)
             y_target[0][action] = reward if done \
-                else reward + self.gamma * np.max(np.asarray(self.target_model(next_state)[0]))
-            X[i][:] = state[0][:]
-            y[i][:] = y_target[0][:]
+                else reward + self.gamma * np.max(np.asarray(self.target_model(next_state)[0].detach()))
+            X[i] = state[0]
+            y[i] = y_target[0]
 
-        self.model.fit(X, y, batch_size=self.batch_size, verbose=2, epochs=50, shuffle=True)
+        pbar = tqdm(range(TRAIN_EPOCHS), desc="Loss: 0.00")
+        for epoch in pbar:
+            pred = self.model(X)
+            loss = self.loss(pred, y)
+            loss.backward(retain_graph=True)
+            pbar.set_description(f"Loss: {loss.item():.2f}")
+            self.optimizer.step()
+
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
-        self.save() if self.checkpoints else None
+        if self.checkpoints:
+            self.save()
+
+        self.model.eval()
 
     def save(self):
-        self.model.save_weights(self.model_path)
+        torch.save(self.model, self.model_path)
 
     def pong(self):
-        self.last_state["reward"] = self.pong_reward
+        pass
 
     def score(self, you_scored: bool):
         sign = 1 if you_scored else -1
@@ -191,46 +194,41 @@ class NeuralNet(Player):
     def reload_from_path(self, path):
         tmp = self.model_path
         self.model_path = path
-        self.model = self._create_or_load()
+        self.model, _, _ = self._create_or_load()
         self.model_path = tmp
 
     def update_target_model(self):
-        self.target_model.load_weights(self.model_path)
+        # self.target_model.load_weights(self.model_path)
+        self.target_model = torch.load(self.model_path)
 
-    def _create_or_load(self):
+    def _create_or_load(self) -> Tuple[torch.nn.Module, torch.optim.Optimizer, torch.nn.Module]:
+        nn = torch.nn
         # all features need to be normalized respective to the player
         # features: my_y, enemy_y, ball_x, ball_y, ball_vel_x, ball_vel_y
-        inps = K.layers.Input(shape=(STATE_DIM,))
-        # the actual hidden layers
-        # deep version
-        """
-        x = K.layers.Dense(128, activation="elu")(inps)
-        x = K.layers.Dense(256, activation="elu")(x)
-        x = K.layers.Dense(512, activation="elu")(x)
-        x = K.layers.Dense(256, activation="elu")(x)
-        """
-        x = K.layers.Dense(48, activation="tanh")(inps)
-        x = K.layers.Dense(22, activation="tanh")(x)
-        # output
-        x = K.layers.Dense(3, activation="linear")(x)
-        model = K.Model(inputs=inps, outputs=x)
         try:
-            model.load_weights(self.model_path)
+            # model.load_weights(self.model_path)
+            model = torch.load(self.model_path)
             print("loading model...")
-        except:
+        except FileNotFoundError:
             print("No model found, creating new one..")
-        if self.training:
-            model.compile(loss="MSE", optimizer="rmsprop")
-        return model
+            model = nn.Sequential(
+                nn.BatchNorm1d(num_features=STATE_DIM),
+                nn.Linear(in_features=STATE_DIM, out_features=128),
+                nn.SELU(inplace=True),
+                nn.Dropout(p=0.3, inplace=True),
+                nn.Linear(in_features=128, out_features=64),
+                nn.SELU(inplace=True),
+                nn.Dropout(p=0.3, inplace=True),
+                nn.Linear(in_features=64, out_features=3),
+                # we can use tanh activation as long as we do not give a pong reward, as any game can not yield more than 1 as reward
+                nn.Tanh(inplace=True)
+            )
 
-    def _state_reset(self):
-        self.last_state = {
-            "state": None,
-            "action": None,
-            "reward": None,
-            "next_state": None,
-            "done": None
-        }
+        loss = nn.HuberLoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.002)
+        model.eval()
+        return model, optimizer, loss
+    
 
 
 class Human(Player):
@@ -266,30 +264,6 @@ class Classic(Player):
         if my_pos > 0.8 or my_pos < 0.2:
             self.state *= -1
         return my_pos + self.state
-
-    def pong(self):
-        pass
-
-    def score(self, you_scored: bool):
-        pass
-
-    def game_over(self, won: bool):
-        pass
-
-class Heuristic(Player):
-    """
-    TODO
-    AI that pre-computes the trajectory of the ball, moves there ASAP
-    and has an given probabillity of making errors of some sort
-    """
-
-    def __init__(self, id):
-        super().__init__(id)
-        raise NotImplementedError
-
-    def play(self, dt: float, player1_pos: np.ndarray, player2_pos: np.ndarray, ball_pos: np.ndarray,
-             ball_vel: np.ndarray) -> float:
-        pass
 
     def pong(self):
         pass
