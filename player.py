@@ -15,6 +15,7 @@ from PIL import Image
 STATE_DIM = 6
 TRAIN_EPOCHS = 100
 MEMORY_LIMIT = 10000
+N_TIMESTEPS = 4
 
 class Player(ABC):
     """
@@ -96,10 +97,11 @@ class Dummy(Player):
 
 @dataclass
 class ReplayMemory:
-    state: torch.tensor
+    state: torch.tensor     # shape (n_timesteps, c, h, w)
     action: int
-    next_state: torch.tensor
+    next_state: "ReplayMemory"
     reward: float
+    done: bool
 
 
 class NeuralNet(Player):
@@ -127,11 +129,8 @@ class NeuralNet(Player):
         self.as_torch = ToTensor()
 
         # memory
-        self.states = None
-        self.actions = None
-        self.rewards = None
-        self.done = None
-        self.last_state: torch.tensor = None
+        self.memory: Deque[ReplayMemory] = deque(maxlen=1000)
+        self.last_state: ReplayMemory = None
 
     def play(self, dt: float, player1_pos: np.ndarray, player2_pos: np.ndarray, ball_pos: np.ndarray,
              ball_vel: np.ndarray, state: Image) -> float:
@@ -140,9 +139,21 @@ class NeuralNet(Player):
         state = self._preprocess_state(state)
 
         if self.training:
+            # prepare new state
+            if self.last_state.state is not None:
+                if not self.last_state.done:
+                    # last state was not terminal -> reward 0 and save
+                    self.last_state.reward = 0
+                    self.memory.append(self.last_state)
 
-            # add state to memory
-            self._maybe_remember(state)
+                temp = self.last_state.state[:, :, :, :]
+                self.last_state.state = torch.empty_like(temp)
+                self.last_state.state[:N_TIMESTEPS-1, :, :, :] = temp[1:, :, :, :]
+            else:
+                self.last_state.state = torch.zeros(N_TIMESTEPS, *state.shape)
+
+            self.last_state.state[-1, :, :, :] = state
+
 
             if np.random.rand() <= self.epsilon:
                 action = np.random.choice(self.actions)
@@ -151,7 +162,7 @@ class NeuralNet(Player):
         else:
             action = self.actions[int(torch.argmax(self.model(state)))]
 
-        self.last_state["action"] = action
+        self.last_state.action = action
         return my_pos[1] + action * self.speed_limit
 
 
@@ -197,10 +208,9 @@ class NeuralNet(Player):
 
     def score(self, you_scored: bool):
         sign = 1 if you_scored else -1
-        self.last_state["reward"] = self.win_reward * sign
-        self.last_state["done"] = True
-        self._memory.append(self.last_state)
-        self._state_reset()
+        self.last_state.reward = self.win_reward * sign
+        self.last_state.done = True
+        self.memory.append(self.last_state)
 
     def game_over(self, won: bool):
         self.score(won)
@@ -242,14 +252,6 @@ class NeuralNet(Player):
             state = state[:, ::-1, :]
 
         return state
-
-    def _maybe_remember(self, state):
-        """
-        decides if it should add state to memory and then saves if applicable
-        """
-        # if self.
-        pass
-
 
 
 class Human(Player):

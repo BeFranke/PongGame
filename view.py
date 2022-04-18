@@ -46,7 +46,8 @@ class PongPaddle(Widget):
 
 class GUIController(App):
     def __init__(self, cfg: Dict, human_callback: Callable[[int], None],
-                 update_fun: Callable[[float], None], resume_fun: Callable[[], None]):
+                 update_fun: Callable[[float], None], resume_fun: Callable[[], None],
+                 headless=False):
         """
         This is the "View" class of the MVC pattern.
         It updates the GUI according to the information it gets from the model
@@ -73,6 +74,7 @@ class GUIController(App):
         self.go = True
         self.loop_event = None
         self.cfg = cfg
+        self.headless = headless
 
     def _keyboard_closed(self):
         """

@@ -117,10 +117,6 @@ if __name__ == "__main__":
             warnings.warn("No trainable Ais detected! Running GUI-less without training is only "
                           "recommended for debugging")
 
-        # small trick to increase the efficiency of data generation
-        if len(ais) > 1:
-            ais[0]._memory = ais[1]._memory
-
         # run without GUI and train
         model.won_callback = training_game_over_callback
         for e in range(TRAIN_GAMES):
