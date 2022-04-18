@@ -4,7 +4,6 @@ from io import BytesIO
 from kivy import Config
 from kivy.app import App
 from kivy.core.window import Window
-from kivy.graphics import Color
 from kivy.lang import Builder
 from kivy.properties import ObjectProperty, NumericProperty, Clock, ListProperty
 from kivy.uix.widget import Widget
@@ -134,7 +133,10 @@ class GUIController(App):
         self._set_ball_pos(self._rel_ball)
         self._set_player_pos(0, self._rel_player1)
         self._set_player_pos(1, self._rel_player2)
-        self.loop_event = Clock.schedule_interval(self.model_update_fun, 1.0 / 120.0)
+        self.loop_event = Clock.schedule_interval(self.model_update_fun, 1.0 / 90)
+        if self.headless:
+            Window.hide()
+
         return self.game
 
     def update(self, player_1_pos: np.ndarray, player_2_pos: np.ndarray, player_1_score: int,
@@ -211,3 +213,5 @@ class GUIController(App):
         self.loop_event.cancel()
         self.game.lbl_game_msg.text = f"Player {pid + 1} won! \n ENTER to play again, ESC to exit"
         self.go = False
+        if self.headless:
+            self.stop()

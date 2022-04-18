@@ -7,6 +7,7 @@ from typing import Dict, List
 
 from model import GameModel
 from player import Player, Human, Dummy, NeuralNet, Classic
+from view import GUIController
 
 TRAIN_GAMES = 10000
 CONFIG_FILE = "config.json"
@@ -99,7 +100,6 @@ if __name__ == "__main__":
     player1, player2 = get_players(cfg)
     model = GameModel(cfg, player1, player2)
     if not cfg["TRAIN_MODE"]:
-        from view import GUIController
         # run with GUI, no training
         gui = GUIController(cfg, model.human_input, model.update, model.reset)
         model.gui_update = gui.update
@@ -117,15 +117,17 @@ if __name__ == "__main__":
             warnings.warn("No trainable Ais detected! Running GUI-less without training is only "
                           "recommended for debugging")
 
+        # increase all parameters to speed up the game
+
         # run without GUI and train
         model.won_callback = training_game_over_callback
         for e in range(TRAIN_GAMES):
             print(f"game {e+1} of {TRAIN_GAMES}")
             # simulate the game
-            while _train_game_runs:
-                # simulate time delta
-                delta = 0.01 + (random() - 0.5) * 0.01
-                model.update(delta)
+            gui = GUIController(cfg, model.human_input, model.update, model.reset, headless=True)
+            model.gui_update = gui.update
+            model.won_callback = gui.game_won
+            gui.run()
 
             ais[0].train()
             # only the first will be trained to save time

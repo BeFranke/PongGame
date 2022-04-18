@@ -17,7 +17,7 @@ HALF = 0.5
 
 
 class GameModel:
-    def __init__(self, cfg: Dict, player1: Player, player2: Player):
+    def __init__(self, cfg: Dict, player1: Player, player2: Player, time_multiplier=1):
         """
         model of the game
         :param cfg: dict with all config values
@@ -40,6 +40,8 @@ class GameModel:
         self._human_state = 0
         self.speedup = self.cfg["limits"]["speedup"]
         self.path_res = self.cfg["limits"]["path_resolution"]
+
+        self.time_multiplier = time_multiplier
 
     def update(self, dt: float) -> None:
         """
