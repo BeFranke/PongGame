@@ -6,6 +6,7 @@ from typing import Deque, List, Dict, Tuple, Union
 
 import numpy as np
 import torch
+import torchvision
 from torchvision.transforms import ToTensor
 from tqdm import tqdm
 from PIL import Image
@@ -224,18 +225,8 @@ class NeuralNet(Player):
             print("loading model...")
         except FileNotFoundError:
             print("No model found, creating new one..")
-            model = nn.Sequential(
-                nn.BatchNorm1d(num_features=STATE_DIM),
-                nn.Linear(in_features=STATE_DIM, out_features=128),
-                nn.SELU(inplace=True),
-                nn.Dropout(p=0.3, inplace=True),
-                nn.Linear(in_features=128, out_features=64),
-                nn.SELU(inplace=True),
-                nn.Dropout(p=0.3, inplace=True),
-                nn.Linear(in_features=64, out_features=3),
-                # we can use tanh activation as long as we do not give a pong reward, as any game can not yield more than 1 as reward
-                nn.Tanh()
-            )
+            model = torchvision.models.resnet50(pretrained=True)
+            model.fc = torch.nn.Linear(in_features=2048, out_features=3)
 
         loss = nn.HuberLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.002)
