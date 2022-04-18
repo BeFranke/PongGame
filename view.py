@@ -4,11 +4,13 @@ from io import BytesIO
 from kivy import Config
 from kivy.app import App
 from kivy.core.window import Window
+from kivy.graphics import Color
 from kivy.lang import Builder
-from kivy.properties import ObjectProperty, NumericProperty, Clock
+from kivy.properties import ObjectProperty, NumericProperty, Clock, ListProperty
 from kivy.uix.widget import Widget
 
 import numpy as np
+from PIL import Image
 
 
 
@@ -39,6 +41,7 @@ class PongPaddle(Widget):
     Players' paddles
     """
     score = NumericProperty(0)
+    rgb = ListProperty([1,1,1])
 
 
 class GUIController(App):
@@ -69,6 +72,7 @@ class GUIController(App):
         self.resume_fun = resume_fun
         self.go = True
         self.loop_event = None
+        self.cfg = cfg
 
     def _keyboard_closed(self):
         """
@@ -118,19 +122,21 @@ class GUIController(App):
             Builder.load_file("ui.kv")
 
         # currently fixed 800x600 resolution, because this is Pong, not Skyrim
-        Config.set('graphics', 'height', 600)
-        Config.set('graphics', 'width', 800)
+        Config.set('graphics', 'height', self.cfg["resolution"][1])
+        Config.set('graphics', 'width', self.cfg["resolution"][0])
         Config.set('graphics', 'resizable', False)
         Config.write()
-        self.game = PongGame()
+        self.game: PongGame = PongGame()
+        self.game.player1.background_color = (168, 78, 50)
+        self.game.player1.background_color = (50, 86, 168)
         self._set_ball_pos(self._rel_ball)
         self._set_player_pos(0, self._rel_player1)
         self._set_player_pos(1, self._rel_player2)
-        self.loop_event = Clock.schedule_interval(self.model_update_fun, 1.0 / 240.0)
+        self.loop_event = Clock.schedule_interval(self.model_update_fun, 1.0 / 120.0)
         return self.game
 
     def update(self, player_1_pos: np.ndarray, player_2_pos: np.ndarray, player_1_score: int,
-               player_2_score: int, ball_pos: np.ndarray) -> None:
+               player_2_score: int, ball_pos: np.ndarray) -> Image:
         """
         updates the GUI
         :param player_1_pos: position of player 1 as [x, y]
@@ -138,19 +144,26 @@ class GUIController(App):
         :param player_1_score: score of player 1
         :param player_2_score: score of player 2
         :param ball_pos: position of the ball as [x, y]
+
+        :return PIL.Image of the canvas
         """
         self._set_player_pos(0, player_1_pos)
         self._set_player_pos(1, player_2_pos)
         self._set_scores([player_1_score, player_2_score])
         self._set_ball_pos(ball_pos)
 
+        tfile = BytesIO()
+        self.game.export_as_image().save(tfile, fmt="png")
+
+        return Image.open(tfile)
+
     def _set_ball_pos(self, new_pos: np.ndarray) -> None:
         """
         moves the ball to a new position
         :param new_pos: new position as [x, y]
         """
-        self.game.ball.center_x = int(new_pos[0] * 800)
-        self.game.ball.center_y = int(new_pos[1] * 600)
+        self.game.ball.center_x = int(new_pos[0] * self.cfg["resolution"][0])
+        self.game.ball.center_y = int(new_pos[1] * self.cfg["resolution"][1])
 
     def _set_player_pos(self, player_id: int, xy: np.ndarray) -> None:
         """
@@ -160,11 +173,12 @@ class GUIController(App):
         """
         assert player_id in [0, 1], "set player_y: invalid player id"
         if player_id == 0:
-            self.game.player1.center_x = int(xy[0] * 800)
-            self.game.player1.center_y = int(xy[1] * 600)
+            self.game.player1.center_x = int(xy[0] * self.cfg["resolution"][0])
+            self.game.player1.center_y = int(xy[1] * self.cfg["resolution"][1])
+            self.game.player1.rgb = (1,0,0)
         else:
-            self.game.player2.center_x = int(xy[0] * 800)
-            self.game.player2.center_y = int(xy[1] * 600)
+            self.game.player2.center_x = int(xy[0] * self.cfg["resolution"][0])
+            self.game.player2.center_y = int(xy[1] * self.cfg["resolution"][1])
 
     def _set_score(self, player_id: int, new_score: int) -> None:
         """

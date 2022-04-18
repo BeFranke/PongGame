@@ -18,10 +18,9 @@ DEFAULT_CONFIG = {
         "ball": [0.5, 0.5],
         "ball_vel": [0.5, 0.0]
     },
-    "players": ["Human", "Heuristic"],
+    "players": ["Human", "Classic"],
+    "resolution": [800, 600],
     "limits": {
-        "resolution": [800, 600],
-        "field_size": [80, 60],
         "max_speed_ball": 10000,
         "speedup": 1.05,
         "points_to_win": 11,
@@ -33,6 +32,7 @@ DEFAULT_CONFIG = {
 _train_game_runs = True
 _last_game_won_by = -1
 _target_update_after_steps = 10
+
 
 def load_config_or_write_defaults() -> Dict:
     """
@@ -86,6 +86,7 @@ def get_players(cfg: Dict, player1_args: Dict = None, player2_args: Dict = None)
             raise Exception("AI Type not understood!")
 
     return players
+
 
 def training_game_over_callback(pid: int):
     global _train_game_runs, _last_game_won_by

@@ -1,10 +1,14 @@
+import copy
 from abc import ABC, abstractmethod
 from collections import deque
+from dataclasses import dataclass
 from typing import Deque, List, Dict, Tuple, Union
 
 import numpy as np
 import torch
+from torchvision.transforms import ToTensor
 from tqdm import tqdm
+from PIL import Image
 
 
 STATE_DIM = 6
@@ -24,12 +28,18 @@ class Player(ABC):
         self.id = id
 
     @abstractmethod
-    def play(self, dt: float, new_image) -> float:
+    def play(self, dt: float, player1_pos: np.ndarray, player2_pos: np.ndarray, ball_pos: np.ndarray,
+             ball_vel: np.ndarray, state: Image) -> float:
         """
         generic play method. Take in game state and return desired new y-position. All positions can be assumed to be
         normed to [0, 1]
         :param dt: time delta in milliseconds
-        :param new_image: torch.tensor of the current game state
+        :param player1_pos: position of player 1 paddle as [x, y]
+        :param player2_pos: position of player 2 paddle as [x, y
+        :param ball_pos: position of pong ball as [x, y]
+        :param ball_vel: velocity of pong ball as [x_vel, y_vel]
+        :param state: Canvas as PIL.Image
+        :return: new y coordinate in [0, 1].
         If the returned position is too far away from the last position (speed limit in config file),
         the game will only update the position to the allowed extent
         """
@@ -58,6 +68,7 @@ class Player(ABC):
         """
         pass
 
+
 class Dummy(Player):
     """
     The simplest type of Pong AI:
@@ -69,7 +80,7 @@ class Dummy(Player):
         super().__init__(id)
 
     def play(self, dt: float, player1_pos: np.ndarray, player2_pos: np.ndarray, ball_pos: np.ndarray,
-             ball_vel: np.ndarray) -> float:
+             ball_vel: np.ndarray, state: Image) -> float:
         return ball_pos[1]
 
     def pong(self):
@@ -80,6 +91,14 @@ class Dummy(Player):
 
     def game_over(self, won: bool):
         pass
+
+
+@dataclass
+class ReplayMemory:
+    state: torch.tensor
+    action: int
+    next_state: torch.tensor
+    reward: float
 
 
 class NeuralNet(Player):
@@ -103,30 +122,26 @@ class NeuralNet(Player):
         self.gamma: float = gamma
         self.actions: List[int] = [1, 0, -1]
         self.model, self.optimizer, self.loss = self._create_or_load()
-        self.target_model = self.model.copy()
+        self.target_model = copy.deepcopy(self.model)
+        self.as_torch = ToTensor()
 
         # memory
-        self.states = torch.zeros((MEMORY_LIMIT, STATE_DIM), dtype=torch.float32)
-        self.actions = torch.zeros(MEMORY_LIMIT, dtype=torch.uint8)
-        self.rewards = torch.zeros(MEMORY_LIMIT)
-        self.done = torch.zeros(MEMORY_LIMIT, dtype=torch.bool)
+        self.states = None
+        self.actions = None
+        self.rewards = None
+        self.done = None
+        self.last_state: torch.tensor = None
 
     def play(self, dt: float, player1_pos: np.ndarray, player2_pos: np.ndarray, ball_pos: np.ndarray,
-             ball_vel: np.ndarray) -> float:
+             ball_vel: np.ndarray, state: Image) -> float:
 
-        # compute the state-vector
-        if self.id == 0:
-            my_pos = player1_pos
-            state = torch.tensor([[player1_pos[1], player2_pos[1], ball_pos[0], ball_pos[1], ball_vel[0], ball_vel[1]]], dtype=torch.float32)
-        else:
-            # mirror the field to make "finding itself" easier for the NeuralNet
-            my_pos = player2_pos
-            state = torch.tensor([[player2_pos[1], player1_pos[1], - ball_pos[0] + 1, ball_pos[1],
-                               - ball_vel[0], ball_vel[1]]], dtype=torch.float32)
+        my_pos = player1_pos if self.id == 0 else player2_pos
+        state = self._preprocess_state(state)
 
-        # manage memory
         if self.training:
-            
+
+            # add state to memory
+            self._maybe_remember(state)
 
             if np.random.rand() <= self.epsilon:
                 action = np.random.choice(self.actions)
@@ -138,8 +153,6 @@ class NeuralNet(Player):
         self.last_state["action"] = action
         return my_pos[1] + action * self.speed_limit
 
-    def play(self, dt, new_image):
-        pass
 
     def train(self):
         self.model.train()
@@ -221,19 +234,36 @@ class NeuralNet(Player):
                 nn.Dropout(p=0.3, inplace=True),
                 nn.Linear(in_features=64, out_features=3),
                 # we can use tanh activation as long as we do not give a pong reward, as any game can not yield more than 1 as reward
-                nn.Tanh(inplace=True)
+                nn.Tanh()
             )
 
         loss = nn.HuberLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.002)
         model.eval()
         return model, optimizer, loss
-    
+
+    def _preprocess_state(self, state: Image):
+        # convert to torch
+        state = self.as_torch(state)
+
+        # if not player 1, mirror along x
+        if self.id != 0:
+            state = state[:, ::-1, :]
+
+        return state
+
+    def _maybe_remember(self, state):
+        """
+        decides if it should add state to memory and then saves if applicable
+        """
+        # if self.
+        pass
+
 
 
 class Human(Player):
     def play(self, dt: float, player1_pos: np.ndarray, player2_pos: np.ndarray, ball_pos: np.ndarray,
-             ball_vel: np.ndarray) -> float:
+             ball_vel: np.ndarray, _) -> float:
         # only here to make interaction easier
         return player1_pos[1] if self.id == 0 else player2_pos[1]
 
@@ -259,7 +289,7 @@ class Classic(Player):
         self.state = 1
 
     def play(self, dt: float, player1_pos: np.ndarray, player2_pos: np.ndarray, ball_pos: np.ndarray,
-             ball_vel: np.ndarray) -> float:
+             ball_vel: np.ndarray, _) -> float:
         my_pos = player1_pos[1] if self.id == 0 else player2_pos[1]
         if my_pos > 0.8 or my_pos < 0.2:
             self.state *= -1

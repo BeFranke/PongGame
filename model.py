@@ -35,7 +35,7 @@ class GameModel:
         self._reset_ball()
         self.player_1_score: int = 0
         self.player_2_score: int = 0
-        self.gui_update: Callable = lambda *args: None
+        self.gui_update: Callable = lambda *args: object()
         self.won_callback: Callable = lambda *args: None
         self._human_state = 0
         self.speedup = self.cfg["limits"]["speedup"]
@@ -47,7 +47,7 @@ class GameModel:
         :param dt: time delta elapsed since last frame in milliseconds
         :return True if game ended, else false
         """
-        # print(f"delta is {dt}")
+
         # move the ball
         last_pos = self.ball_pos.copy()
         self.ball_pos += self.ball_vel * dt
@@ -93,16 +93,17 @@ class GameModel:
             score_player = int(self.ball_pos[0] < HALF)
             self._score(score_player)
 
-        new_player1_y = self.player1.play(dt, self.player_1_pos, self.player_2_pos, self.ball_pos, self.ball_vel)
-        new_player2_y = self.player2.play(dt, self.player_1_pos, self.player_2_pos, self.ball_pos, self.ball_vel)
+        state = self.gui_update(self.player_1_pos, self.player_2_pos, self.player_1_score, self.player_2_score,
+                                self.ball_pos)
+
+        new_player1_y = self.player1.play(dt, self.player_1_pos, self.player_2_pos, self.ball_pos, self.ball_vel, state)
+        new_player2_y = self.player2.play(dt, self.player_1_pos, self.player_2_pos, self.ball_pos, self.ball_vel, state)
 
         # if player 1 is human, this is where key input gets included (then new_player1_y == self.player_1_pos)
         new_player1_y += self._human_state * self.speed_limit
 
         self.player_1_pos[1] = self._trim_to_valid(self.player_1_pos[1], new_player1_y)
         self.player_2_pos[1] = self._trim_to_valid(self.player_2_pos[1], new_player2_y)
-
-        self.gui_update(self.player_1_pos, self.player_2_pos, self.player_1_score, self.player_2_score, self.ball_pos)
 
     def _score(self, player: int) -> None:
         """
