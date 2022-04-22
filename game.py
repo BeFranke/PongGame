@@ -1,8 +1,6 @@
 import json
 import os
 import warnings
-from random import random
-from sys import argv
 from typing import Dict, List
 
 from model import GameModel
@@ -20,10 +18,11 @@ DEFAULT_CONFIG = {
         "ball_vel": [0.5, 0.0]
     },
     "players": ["Human", "Classic"],
-    "resolution": [800, 600],
+    "resolution": [1200, 600],
+    "game_speed": 1.0,
     "limits": {
         "max_speed_ball": 10000,
-        "speedup": 1.05,
+        "speedup": 1.0,
         "points_to_win": 11,
         "max_speed_player": 0.02,
         "path_resolution": 100
@@ -43,10 +42,14 @@ def load_config_or_write_defaults() -> Dict:
     if os.path.isfile(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as fp:
             cfg = json.load(fp)
+        
+        cfg["positions"]["ball_vel"][0] *= cfg["game_speed"]
+        cfg["positions"]["ball_vel"][1] *= cfg["game_speed"]
+        cfg["limits"]["max_speed_ball"] *= cfg["game_speed"]
+        cfg["limits"]["max_speed_player"] *= cfg["game_speed"]
         return cfg
     else:
         with open(CONFIG_FILE, "w+") as fp:
-            DEFAULT_CONFIG["TRAIN_MODE"] = "--nogui" in argv
             json.dump(DEFAULT_CONFIG, fp, indent=2)
         return DEFAULT_CONFIG
 
@@ -117,9 +120,6 @@ if __name__ == "__main__":
             warnings.warn("No trainable Ais detected! Running GUI-less without training is only "
                           "recommended for debugging")
 
-        # increase all parameters to speed up the game
-
-        # run without GUI and train
         model.won_callback = training_game_over_callback
         for e in range(TRAIN_GAMES):
             print(f"game {e+1} of {TRAIN_GAMES}")

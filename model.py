@@ -42,13 +42,21 @@ class GameModel:
         self.path_res = self.cfg["limits"]["path_resolution"]
 
         self.time_multiplier = time_multiplier
+        self.first_update = True
 
     def update(self, dt: float) -> None:
         """
         compute next frame
         :param dt: time delta elapsed since last frame in milliseconds
-        :return True if game ended, else false
         """
+        # skip first frame as dt is weird for that
+        if self.first_update:
+            self.first_update = False
+            self.gui_update(self.player_1_pos, self.player_2_pos, self.player_1_score, self.player_2_score,
+                                self.ball_pos)
+            return
+        # time fix
+        dt = dt / self.cfg["game_speed"]
 
         # move the ball
         last_pos = self.ball_pos.copy()

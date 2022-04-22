@@ -140,7 +140,7 @@ class NeuralNet(Player):
 
         if self.training:
             # prepare new state
-            if self.last_state.state is not None:
+            if self.last_state is not None and self.last_state.state is not None:
                 if not self.last_state.done:
                     # last state was not terminal -> reward 0 and save
                     self.last_state.reward = 0
@@ -150,9 +150,10 @@ class NeuralNet(Player):
                 self.last_state.state = torch.empty_like(temp)
                 self.last_state.state[:N_TIMESTEPS-1, :, :, :] = temp[1:, :, :, :]
             else:
-                self.last_state.state = torch.zeros(N_TIMESTEPS, *state.shape)
+                self.last_state = ReplayMemory(torch.zeros(N_TIMESTEPS, *state.shape), None, None, None, None)
 
             self.last_state.state[-1, :, :, :] = state
+            state = state[None, :, :, :]
 
 
             if np.random.rand() <= self.epsilon:
@@ -167,6 +168,7 @@ class NeuralNet(Player):
 
 
     def train(self):
+        # TODO rewrite for convnet
         self.model.train()
         self.target_model.eval()
         X = torch.zeros((len(self._memory), 6))
@@ -245,11 +247,11 @@ class NeuralNet(Player):
 
     def _preprocess_state(self, state: Image):
         # convert to torch
-        state = self.as_torch(state)
+        state = self.as_torch(state)[:3]
 
         # if not player 1, mirror along x
         if self.id != 0:
-            state = state[:, ::-1, :]
+            state = torch.flip(state, dims=(1,))
 
         return state
 
