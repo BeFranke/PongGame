@@ -6,7 +6,7 @@ from typing import Deque, List, Dict, Tuple, Union
 
 import numpy as np
 import torch
-import torchvision
+import torchvision as tv
 from torchvision.transforms import ToTensor
 from tqdm import tqdm
 from PIL import Image
@@ -109,14 +109,15 @@ class NeuralNet(Player):
     torch-based deep-Q agent
     """
     def __init__(self, id, speed_limit: float, model_path: str = "models/DeepPongQ", training: bool = True,
-                 gamma: float = 0.99, epsilon: float = 0.99, epsilon_decay: float = 0.9,
-                 win_reward: int = 1, epsilon_min: float = 0.001, batch_size=2048, checkpoints=True):
+                 gamma: float = 0.99, epsilon: float = 0.99, epsilon_decay: float = 0.9, pong_reward: float = 0.01,
+                 win_reward: float = 1.0, epsilon_min: float = 0.001, batch_size=2048, checkpoints=True):
         super().__init__(id)
         # hyperparameters
         self.checkpoints = checkpoints
         self.batch_size = batch_size
         self.epsilon_min = epsilon_min
         self.win_reward = win_reward
+        self.pong_reward = pong_reward
         self.speed_limit = speed_limit
         self.epsilon_decay = epsilon_decay
         self.epsilon = epsilon
@@ -132,6 +133,9 @@ class NeuralNet(Player):
         self.memory: Deque[ReplayMemory] = deque(maxlen=1000)
         self.last_state: ReplayMemory = None
 
+        self.model.eval()
+        self.target_model.eval()
+
     def play(self, dt: float, player1_pos: np.ndarray, player2_pos: np.ndarray, ball_pos: np.ndarray,
              ball_vel: np.ndarray, state: Image) -> float:
 
@@ -143,36 +147,35 @@ class NeuralNet(Player):
             if self.last_state is not None and self.last_state.state is not None:
                 if not self.last_state.done:
                     # last state was not terminal -> reward 0 and save
-                    self.last_state.reward = 0
+                    if self.last_state.reward is None:
+                        self.last_state.reward = 0
                     self.memory.append(self.last_state)
 
                 temp = self.last_state.state[:, :, :, :]
                 self.last_state.state = torch.empty_like(temp)
-                self.last_state.state[:N_TIMESTEPS-1, :, :, :] = temp[1:, :, :, :]
+                self.last_state.state[:, :N_TIMESTEPS-1, :, :] = temp[:, 1:, :, :]
             else:
-                self.last_state = ReplayMemory(torch.zeros(N_TIMESTEPS, *state.shape), None, None, None, None)
+                self.last_state = ReplayMemory(torch.zeros(3, N_TIMESTEPS, *state.shape[1:]), None, None, None, None)
 
-            self.last_state.state[-1, :, :, :] = state
-            state = state[None, :, :, :]
+            self.last_state.state[:, -1, :, :] = state
 
 
             if np.random.rand() <= self.epsilon:
                 action = np.random.choice(self.actions)
             else:
-                action = self.actions[int(torch.argmax(self.model(state)))]
+                action = self.actions[int(torch.argmax(self.model(self.last_state.state[None, :, :, :, :])))]
         else:
-            action = self.actions[int(torch.argmax(self.model(state)))]
+            action = self.actions[int(torch.argmax(self.model(self.last_state.state[None, :, :, :, :])))]
 
         self.last_state.action = action
         return my_pos[1] + action * self.speed_limit
 
 
     def train(self):
-        # TODO rewrite for convnet
         self.model.train()
         self.target_model.eval()
-        X = torch.zeros((len(self._memory), 6))
-        y = torch.zeros((len(self._memory), 3))
+        X = torch.zeros((len(self.memory), *self.memory[0].state.shape))
+        y = torch.zeros((len(self.memory), 3))
         for i, d in enumerate(self._memory):
             state = d["state"]
             action = d["action"]
@@ -206,7 +209,8 @@ class NeuralNet(Player):
         torch.save(self.model, self.model_path)
 
     def pong(self):
-        pass
+        self.last_state.reward = self.pong_reward
+        self.memory.append(self.last_state)
 
     def score(self, you_scored: bool):
         sign = 1 if you_scored else -1
@@ -237,8 +241,8 @@ class NeuralNet(Player):
             print("loading model...")
         except FileNotFoundError:
             print("No model found, creating new one..")
-            model = torchvision.models.resnet50(pretrained=True)
-            model.fc = torch.nn.Linear(in_features=2048, out_features=3)
+            model = tv.models.video.r2plus1d_18(pretrained=False)
+            model.fc = torch.nn.Linear(in_features=512, out_features=3)
 
         loss = nn.HuberLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.002)

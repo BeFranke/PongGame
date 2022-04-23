@@ -56,7 +56,7 @@ class GameModel:
                                 self.ball_pos)
             return
         # time fix
-        dt = dt / self.cfg["game_speed"]
+        dt = dt / self.time_multiplier
 
         # move the ball
         last_pos = self.ball_pos.copy()

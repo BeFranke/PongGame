@@ -10,7 +10,7 @@ from view import GUIController
 TRAIN_GAMES = 10000
 CONFIG_FILE = "config.json"
 DEFAULT_CONFIG = {
-    "TRAIN_MODE": False,
+    "train_mode": False,
     "positions": {
         "player1": [0.1, 0.5],
         "player2": [0.9, 0.5],
@@ -19,7 +19,6 @@ DEFAULT_CONFIG = {
     },
     "players": ["Human", "Classic"],
     "resolution": [1200, 600],
-    "game_speed": 1.0,
     "limits": {
         "max_speed_ball": 10000,
         "speedup": 1.0,
@@ -42,11 +41,17 @@ def load_config_or_write_defaults() -> Dict:
     if os.path.isfile(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as fp:
             cfg = json.load(fp)
+
+        if cfg["train_mode"]:
+            game_speed = 100
+        else: 
+            game_speed = 1
         
-        cfg["positions"]["ball_vel"][0] *= cfg["game_speed"]
-        cfg["positions"]["ball_vel"][1] *= cfg["game_speed"]
-        cfg["limits"]["max_speed_ball"] *= cfg["game_speed"]
-        cfg["limits"]["max_speed_player"] *= cfg["game_speed"]
+        cfg["positions"]["ball_vel"][0] *= game_speed
+        cfg["positions"]["ball_vel"][1] *= game_speed
+        cfg["limits"]["max_speed_ball"] *= game_speed
+        cfg["limits"]["max_speed_player"] *= game_speed
+        cfg["game_speed"] = game_speed
         return cfg
     else:
         with open(CONFIG_FILE, "w+") as fp:
@@ -101,8 +106,8 @@ def training_game_over_callback(pid: int):
 if __name__ == "__main__":
     cfg = load_config_or_write_defaults()
     player1, player2 = get_players(cfg)
-    model = GameModel(cfg, player1, player2)
-    if not cfg["TRAIN_MODE"]:
+    model = GameModel(cfg, player1, player2, time_multiplier=cfg["game_speed"])
+    if not cfg["train_mode"]:
         # run with GUI, no training
         gui = GUIController(cfg, model.human_input, model.update, model.reset)
         model.gui_update = gui.update
