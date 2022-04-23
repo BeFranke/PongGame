@@ -82,9 +82,9 @@ def get_players(cfg: Dict, player1_args: Dict = None, player2_args: Dict = None)
             args = {
                 "id": id,
                 "speed_limit": cfg["limits"]["max_speed_player"],
-                "training": cfg["TRAIN_MODE"]
+                "training": cfg["train_mode"]
             }
-            if cfg["TRAIN_MODE"]:
+            if cfg["train_mode"]:
                 args["epsilon"] = 0
             players.append(
                 NeuralNet(**args)
@@ -145,3 +145,4 @@ if __name__ == "__main__":
 
             _train_game_runs = True
             model.reset()
+            del gui
