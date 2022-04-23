@@ -119,21 +119,20 @@ class GUIController(App):
         """
         kivy-build function that constructs the GUI
         """
+        global _kv_loaded
         if not _kv_loaded:
             Builder.load_file("ui.kv")
+            _kv_loaded = True
 
-        # currently fixed 800x600 resolution, because this is Pong, not Skyrim
         Config.set('graphics', 'height', self.cfg["resolution"][1])
         Config.set('graphics', 'width', self.cfg["resolution"][0])
         Config.set('graphics', 'resizable', False)
         Config.write()
         self.game: PongGame = PongGame()
-        self.game.player1.background_color = (168, 78, 50)
-        self.game.player1.background_color = (50, 86, 168)
         self._set_ball_pos(self._rel_ball)
         self._set_player_pos(0, self._rel_player1)
         self._set_player_pos(1, self._rel_player2)
-        self.loop_event = Clock.schedule_interval(self.model_update_fun, 1.0 / 90)
+        self.loop_event = Clock.schedule_interval(self.model_update_fun, (1.0 / 90) if not self.headless else (1.0 / 1000))
         if self.headless:
             Window.hide()
 
@@ -179,7 +178,6 @@ class GUIController(App):
         if player_id == 0:
             self.game.player1.center_x = int(xy[0] * self.cfg["resolution"][0])
             self.game.player1.center_y = int(xy[1] * self.cfg["resolution"][1])
-            self.game.player1.rgb = (1,0,0)
         else:
             self.game.player2.center_x = int(xy[0] * self.cfg["resolution"][0])
             self.game.player2.center_y = int(xy[1] * self.cfg["resolution"][1])

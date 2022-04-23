@@ -17,7 +17,7 @@ HALF = 0.5
 
 
 class GameModel:
-    def __init__(self, cfg: Dict, player1: Player, player2: Player, time_multiplier=1):
+    def __init__(self, cfg: Dict, player1: Player, player2: Player):
         """
         model of the game
         :param cfg: dict with all config values
@@ -41,7 +41,6 @@ class GameModel:
         self.speedup = self.cfg["limits"]["speedup"]
         self.path_res = self.cfg["limits"]["path_resolution"]
 
-        self.time_multiplier = time_multiplier
         self.first_update = True
 
     def update(self, dt: float) -> None:
@@ -56,7 +55,8 @@ class GameModel:
                                 self.ball_pos)
             return
         # time fix
-        dt = dt / self.time_multiplier
+        if self.cfg["train_mode"]:
+            dt = 1.0 / 90
 
         # move the ball
         last_pos = self.ball_pos.copy()

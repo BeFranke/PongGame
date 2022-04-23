@@ -13,7 +13,7 @@ from PIL import Image
 
 
 STATE_DIM = 6
-TRAIN_EPOCHS = 100
+TRAIN_EPOCHS = 20
 MEMORY_LIMIT = 10000
 N_TIMESTEPS = 4
 
@@ -135,7 +135,7 @@ class NeuralNet(Player):
         ])
 
         # memory
-        self.memory: Deque[ReplayMemory] = deque(maxlen=1000)
+        self.memory: Deque[ReplayMemory] = deque(maxlen=MEMORY_LIMIT)
         self.last_state: ReplayMemory = None
 
         self.model.eval()
@@ -230,13 +230,13 @@ class NeuralNet(Player):
 
     def pong(self):
         self.last_state.reward = self.pong_reward
-        self.memory.append(self.last_state)
 
     def score(self, you_scored: bool):
         sign = 1 if you_scored else -1
         self.last_state.reward = self.win_reward * sign
         self.last_state.done = True
         self.memory.append(self.last_state)
+        self.last_state = None
 
     def game_over(self, won: bool):
         self.score(won)
@@ -260,9 +260,22 @@ class NeuralNet(Player):
             print("loading model...")
         except FileNotFoundError:
             print("No model found, creating new one..")
-            model = tv.models.mobilenet_v3_small()
-            model.classifier[3] = torch.nn.Linear(in_features=1024, out_features=3, bias=True)
-            model.features[0][0] = torch.nn.Conv2d(4, 16, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+            model = nn.Sequential(
+                nn.BatchNorm2d(num_features=4),
+                nn.Conv2d(in_channels=4, out_channels=16, kernel_size=(5,5), stride=2, padding=2),  # (16, 80, 120)
+                nn.ELU(inplace=True),
+                nn.BatchNorm2d(num_features=16),
+                nn.Conv2d(in_channels=16, out_channels=32, kernel_size=(5,5), stride=2, padding=2), # (32, 40, 60)
+                nn.ELU(inplace=True),
+                nn.BatchNorm2d(num_features=32),
+                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(5,5), stride=2, padding=2), # (64, 20, 30)
+                nn.ELU(inplace=True),
+                nn.Flatten(),
+                nn.Linear(in_features=64 * 20 * 30, out_features=512),
+                nn.Dropout(),
+                nn.ELU(),
+                nn.Linear(in_features=512, out_features=3)
+            )
         
         loss = nn.HuberLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.002)
